@@ -286,18 +286,15 @@ function parse(json: string): Permission[] {
  * explain to people.
  */
 /*
- * isHost is gone, and with it the last account that meant anything outside a
- * server.
+ * Everything here answers one question: what may this person do in this
+ * server?
  *
- * It answered "is this the account that claimed the install", which opened
- * the health and storage pages. Narrow, and still the wrong shape: running
- * Atrium is not a rank inside Atrium, any more than the people who run any
- * other app are a role in somebody's group on it. Those two pages are proved
- * with a secret now - see isOperator in auth.ts - and no account is special.
- *
- * Further back it was worse: whoever ran the app held every permission in
- * every space, outranked every member and could edit any role, so somebody
- * who made a server of their own found a stranger sitting at the top of it.
+ * There is no second question. An account carries nothing that outranks
+ * anybody, in this server or any other - what somebody may do is decided
+ * inside the server they are in, by the roles it gave them, and nowhere
+ * else. The few routes that are about the hardware belong to whoever runs
+ * Atrium and are proved with a secret rather than by being an account; see
+ * isOperator in auth.ts.
  */
 
 /*

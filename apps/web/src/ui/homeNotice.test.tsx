@@ -49,11 +49,18 @@ describe('where the notice comes from', () => {
     expect(src.notice).toContain('export const NOTICE')
   })
 
-  /* The whole point of the correction. Nobody gets a switch nobody else has. */
+  /*
+   * The whole point of it. Nobody gets a switch nobody else has.
+   *
+   * The notice is a constant in the source and the app only ever reads it -
+   * so there is no route to write it and nothing to decide who may. This
+   * used to also forbid the two ways an account could once have been asked
+   * whether it was special; neither exists to be asked any more, so what is
+   * left is the thing that matters: it is read, never written.
+   */
   it('and nothing in the app can write it', () => {
     for (const [where, text] of Object.entries(src)) {
       expect(text, `${where} still writes the notice`).not.toMatch(/home-notice/)
-      expect(text, `${where} still asks who may edit`).not.toMatch(/isHost|role === 'owner'/)
     }
   })
 
