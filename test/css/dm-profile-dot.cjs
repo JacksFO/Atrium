@@ -19,7 +19,7 @@ const { readFileSync } = require('node:fs')
 const { join } = require('node:path')
 
 const ROOT = join(__dirname, '..', '..')
-const css = ['apps/client/src/app.css', 'apps/client/src/stage1.css']
+const css = ['apps/web/src/app.css']
   .map((f) => readFileSync(join(ROOT, f), 'utf8')).join('\n')
 
 const tokens = `:root{--glass:#181c22;--glass-solid:#181c22;--blur:blur(8px);--line:#2b3138;
@@ -63,7 +63,7 @@ const html = `<!doctype html><meta charset="utf-8"><style>${tokens}\n${css}</sty
 
 app.disableHardwareAcceleration()
 app.whenReady().then(async () => {
-  const win = new BrowserWindow({ show: false, width: 500, height: 700 })
+  const win = new BrowserWindow({ show: false, x: -4000, y: 0, focusable: false, width: 500, height: 700 })
   await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
 
   const out = await win.webContents.executeJavaScript(`(() => {

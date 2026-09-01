@@ -39,7 +39,7 @@ const check = (what, ok, got) => {
 
 app.disableHardwareAcceleration()
 app.whenReady().then(async () => {
-  const win = new BrowserWindow({ show: true, width: 300, height: 340 })
+  const win = new BrowserWindow({ show: true, x: -4000, y: 0, focusable: false, width: 300, height: 340 })
   await win.loadFile(SPLASH)
   await new Promise((r) => setTimeout(r, 300))
 

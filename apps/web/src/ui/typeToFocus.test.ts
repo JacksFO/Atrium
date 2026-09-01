@@ -82,6 +82,9 @@ describe('and stays out of the way of', () => {
   it('and anywhere else that takes typing', () => {
     expect(handler).toContain("on.tagName === 'INPUT'")
     expect(handler).toContain("on.tagName === 'TEXTAREA'")
+    /* A select takes type-ahead, which is typing by another name - stealing
+       it breaks choosing an option by its first letters. */
+    expect(handler).toContain("on.tagName === 'SELECT'")
     expect(handler).toContain('on.isContentEditable')
   })
 
@@ -91,14 +94,27 @@ describe('and stays out of the way of', () => {
   })
 
   /*
-   * And anything open over the top.
+   * And anything open over the top, asked geometrically.
    *
-   * A dialog or a menu owns the keyboard while it is up - Escape closes it,
-   * letters move through it - and the conversation underneath is not what is
-   * being used.
+   * This listed overlays by class first, which is a list that goes stale the
+   * day somebody adds one: the composer stays mounted the whole time the
+   * settings window is open, so typing in there put characters into a box
+   * nobody could see. Found by audit, an hour after it shipped.
+   *
+   * If the topmost thing where the box is drawn is not the box, something is
+   * over it - whatever that something is called. It also covers the box
+   * being scrolled away or collapsed to nothing, which no class list would.
    */
-  it('and a dialog or a menu that is open', () => {
-    expect(handler).toContain(".modal, .ctx, .scrim")
+  it('and anything drawn over the box, without naming what', () => {
+    expect(handler).toContain('document.elementFromPoint(')
+    expect(handler).toContain('hit !== el && !el.contains(hit)')
+    /* No class list, or the stale-list problem is back. */
+    expect(handler).not.toMatch(/\.modal|\.setwin|\.lightbox/)
+  })
+
+  /* And a box with no size is not somewhere to put a keystroke. */
+  it('and a box that is not being drawn at all', () => {
+    expect(handler).toContain('r.width === 0 || r.height === 0')
   })
 
   /* And it does not run at all where the person cannot send anyway. */

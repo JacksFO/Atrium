@@ -15,9 +15,7 @@ const { readFileSync } = require('node:fs')
 const { join } = require('node:path')
 
 const ROOT = join(__dirname, '..', '..')
-const css = ['apps/client/src/tokens.css', 'apps/client/src/app.css',
-  'apps/client/src/rail.css', 'apps/client/src/settings.css',
-  'apps/client/src/stage1.css', 'apps/client/src/responsive.css']
+const css = ['apps/web/src/app.css']
   .map((f) => readFileSync(join(ROOT, f), 'utf8')).join('\n')
 
 /* A sample of the app: a message, a name, a channel row, a small label. */
@@ -51,7 +49,7 @@ const sizes = () => `(() => {
 
 app.disableHardwareAcceleration()
 app.whenReady().then(async () => {
-  const win = new BrowserWindow({ show: true, width: 1200, height: 800 })
+  const win = new BrowserWindow({ show: true, x: -4000, y: 0, focusable: false, width: 1200, height: 800 })
   await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
 
   // --- the default has to look exactly as it always did -------------------

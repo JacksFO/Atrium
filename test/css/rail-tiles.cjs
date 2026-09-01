@@ -16,7 +16,7 @@ const { join } = require('node:path')
 const ROOT = join(__dirname, '..', '..')
 // The real cascade, in the order the app loads it: the reset resets some of
 // what a <button> brings with it but not all, which is the whole question.
-const css = ['apps/client/src/app.css', 'apps/client/src/rail.css']
+const css = ['apps/web/src/app.css']
   .map((f) => readFileSync(join(ROOT, f), 'utf8')).join('\n')
 // The tokens the rail's rules refer to. Values do not matter to geometry;
 // they only have to exist so nothing collapses to an unset length.
@@ -41,7 +41,7 @@ const html = `<!doctype html><meta charset="utf-8"><style>${tokens}\n${css}</sty
 
 app.disableHardwareAcceleration()
 app.whenReady().then(async () => {
-  const win = new BrowserWindow({ show: false, width: 400, height: 400 })
+  const win = new BrowserWindow({ show: false, x: -4000, y: 0, focusable: false, width: 400, height: 400 })
   await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
   const out = await win.webContents.executeJavaScript(`(() => {
     const pip = document.getElementById('withIcon')

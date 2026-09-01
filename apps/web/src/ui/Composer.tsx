@@ -725,12 +725,32 @@ export function Composer({
        */
       const on = document.activeElement as HTMLElement | null
       if (on && (on.tagName === 'INPUT' || on.tagName === 'TEXTAREA'
-        || on.isContentEditable)) return
+        || on.tagName === 'SELECT' || on.isContentEditable)) return
 
-      /* And nothing is open over the top. A dialog or a menu owns the
-         keyboard while it is up - Escape closes it, letters move through it -
-         and the conversation underneath is not what is being used. */
-      if (document.querySelector('.modal, .ctx, .scrim')) return
+      /*
+       * And the box is actually the thing at its own position.
+       *
+       * Something open over the conversation - settings, a dialog, a menu,
+       * a picture - owns the keyboard while it is up, and the box behind it
+       * is not what anybody is using. The first version of this listed those
+       * by class, which is a list that goes stale the day somebody adds an
+       * overlay and forgets: the composer is mounted the whole time settings
+       * is open, so typing in there put characters into a box nobody could
+       * see.
+       *
+       * Asked geometrically instead. If the topmost thing where the box is
+       * drawn is not the box, something is over it, whatever that something
+       * happens to be called. It also covers the box being scrolled away or
+       * collapsed to nothing, which a class list never would.
+       *
+       * Only reached when focus is on something that does not take typing,
+       * which is not the common case - typing into the box itself returns
+       * three lines above this.
+       */
+      const r = el.getBoundingClientRect()
+      if (r.width === 0 || r.height === 0) return
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+      if (hit !== el && !el.contains(hit)) return
 
       el.focus()
     }

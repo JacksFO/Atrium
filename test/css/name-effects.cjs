@@ -20,14 +20,7 @@ const { readFileSync } = require('node:fs')
 const { join } = require('node:path')
 
 const ROOT = join(__dirname, '..', '..')
-const css = [
-  'apps/client/src/tokens.css',
-  'apps/client/src/app.css',
-  'apps/client/src/stage1.css',
-  'apps/client/src/settings.css',
-  'apps/client/src/rail.css',
-  'apps/client/src/responsive.css',
-].map((f) => readFileSync(join(ROOT, f), 'utf8')).join('\n')
+const css = ['apps/web/src/app.css'].map((f) => readFileSync(join(ROOT, f), 'utf8')).join('\n')
 
 const tokens = `:root{--glass:#181c22;--glass-2:#1d2229;--glass-solid:#181c22;--blur:blur(8px);
   --line:#2b3138;--line-soft:#22262c;--raise:#20252c;--raise-2:#272d35;--text:#e7ecf2;
@@ -58,7 +51,7 @@ const html = `<!doctype html><meta charset="utf-8"><style>${tokens}\n${css}</sty
 
 app.disableHardwareAcceleration()
 app.whenReady().then(async () => {
-  const win = new BrowserWindow({ show: true, width: 900, height: 600 })
+  const win = new BrowserWindow({ show: true, x: -4000, y: 0, focusable: false, width: 900, height: 600 })
   await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
 
   const out = await win.webContents.executeJavaScript(`(() => {

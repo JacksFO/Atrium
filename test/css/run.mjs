@@ -1,6 +1,23 @@
 /**
  * Measure the rail's tiles in a real browser engine.
  *
+ * NOT PORTED. Every spec here was written against the client that was
+ * replaced, and measures class names that no longer exist - `act-card`,
+ * `dmp-banner`, `rail-icon`, `stage-cell`. Twelve of the fourteen measure
+ * markup that the current stylesheet has no rules for at all, so they render
+ * unstyled boxes and measure those. Repointing them at the one stylesheet
+ * that survived stops the crash and does not make them mean anything.
+ *
+ * Until somebody ports them, this suite answers questions about an app that
+ * is not here. The browser suite in test/ui does the same job against the
+ * client that exists, off-screen, and is green.
+ *
+ * Two things were fixed rather than left: the paths, because reading a file
+ * that is not there throws in Electron's main process and an uncaught throw
+ * there is a modal dialog on somebody's screen rather than a line in a log;
+ * and the windows, which opened in front of whoever was at the machine
+ * instead of off the side of the screen the way test/ui does it.
+ *
  * Runs the check under Electron rather than a DOM shim, because the question
  * is what a browser's own stylesheet does to a <button> before ours gets a
  * say - and a shim has no such stylesheet, so it would agree with whatever

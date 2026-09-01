@@ -29,8 +29,7 @@ const ROOT = join(__dirname, '..', '..')
    the card at the browser's 16px rather than at the size the app renders
    at, which is not the same card - and that size is a setting, so it can
    move under the layout. */
-const css = ['apps/client/src/app.css', 'apps/client/src/stage1.css',
-  'apps/client/src/responsive.css']
+const css = ['apps/web/src/app.css']
   .map((f) => readFileSync(join(ROOT, f), 'utf8')).join('\n')
 
 const tokens = `:root{--glass:#181c22;--glass-2:#1b2027;--glass-solid:#181c22;--blur:blur(8px);
@@ -134,7 +133,7 @@ app.disableHardwareAcceleration()
 let win = null
 const measure = async (height) => {
   if (!win) {
-    win = new BrowserWindow({ show: true, useContentSize: true, width: 1400, height })
+    win = new BrowserWindow({ show: true, x: -4000, y: 0, focusable: false, useContentSize: true, width: 1400, height })
     await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(page))
   } else {
     // Resized rather than reloaded: it is the same page seeing a smaller

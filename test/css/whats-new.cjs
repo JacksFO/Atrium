@@ -16,8 +16,7 @@ const { readFileSync } = require('node:fs')
 const { join } = require('node:path')
 
 const ROOT = join(__dirname, '..', '..')
-const css = ['apps/client/src/app.css', 'apps/client/src/stage1.css',
-  'apps/client/src/responsive.css']
+const css = ['apps/web/src/app.css']
   .map((f) => readFileSync(join(ROOT, f), 'utf8')).join('\n')
 
 const tokens = `:root{--glass:#181c22;--glass-2:#1b2027;--glass-solid:#181c22;--blur:blur(8px);
@@ -65,7 +64,7 @@ app.disableHardwareAcceleration()
 app.whenReady().then(async () => {
   /* A laptop. A card that only fits a big screen is the same bug reported
      later by somebody with a smaller one. */
-  const win = new BrowserWindow({ show: true, useContentSize: true, width: 1200, height: 720 })
+  const win = new BrowserWindow({ show: true, x: -4000, y: 0, focusable: false, useContentSize: true, width: 1200, height: 720 })
 
   const measure = async (html) => {
     await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(

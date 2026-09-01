@@ -136,6 +136,48 @@ module.exports = {
     })()`)
     await wait(700)
 
+    // --- and not into a box hidden behind something else -------------------
+    /*
+     * The composer stays mounted while settings is open - the whole window
+     * is drawn over it - so a listener that only asked "is anything taking
+     * typing" would put characters into a box nobody can see. Found by
+     * audit, not by using it, which is exactly the kind of thing a class
+     * list of overlays misses.
+     */
+    const opened = await js(`(() => {
+      const b = [...document.querySelectorAll('button')]
+        .find((x) => /settings/i.test(x.getAttribute('aria-label') || ''))
+      if (b) b.click()
+      return !!b
+    })()`)
+    await wait(1200)
+    const inSettings = await js(`(() => ({
+      open: !!document.querySelector('.setwin'),
+      composerStillThere: !!${MESSAGE_BOX},
+    }))()`)
+    check('settings opens, with the message box still mounted behind it',
+      opened === true && inSettings.open === true && inSettings.composerStillThere === true,
+      inSettings)
+
+    await js(`(() => { const a = document.activeElement; if (a && a.blur) a.blur(); document.body.focus(); return 1 })()`)
+    await wait(300)
+    press(win, 'q')
+    await wait(500)
+    const behind = await js(`(() => ({
+      composer: ${MESSAGE_BOX} ? ${MESSAGE_BOX}.value : null,
+      onComposer: document.activeElement === ${MESSAGE_BOX},
+    }))()`)
+    check('typing over settings does not reach the box behind it',
+      behind.composer === 'hi' && behind.onComposer === false, behind)
+
+    /* Put settings away again. */
+    await js(`(() => {
+      const x = document.querySelector('.setwin .sx')
+      if (x) x.click()
+      return 1
+    })()`)
+    await wait(900)
+
     // --- and a shortcut is still a shortcut --------------------------------
     /*
      * Ctrl and a letter is somebody asking for something, not writing. If
