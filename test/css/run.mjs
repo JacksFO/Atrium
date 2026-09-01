@@ -1,27 +1,33 @@
 /**
- * Measure the rail's tiles in a real browser engine.
+ * Measure markup in a real browser engine.
  *
- * NOT PORTED. Every spec here was written against the client that was
- * replaced, and measures class names that no longer exist - `act-card`,
- * `dmp-banner`, `rail-icon`, `stage-cell`. Twelve of the fourteen measure
- * markup that the current stylesheet has no rules for at all, so they render
- * unstyled boxes and measure those. Repointing them at the one stylesheet
- * that survived stops the crash and does not make them mean anything.
+ * Under Electron rather than a DOM shim, because the question is what a
+ * browser's own stylesheet does to a <button> before ours gets a say - and a
+ * shim has no such stylesheet, so it would agree with whatever the rules say
+ * and prove nothing.
  *
- * Until somebody ports them, this suite answers questions about an app that
- * is not here. The browser suite in test/ui does the same job against the
- * client that exists, off-screen, and is green.
+ * What is left measures the desktop's splash screen, which is plain HTML this
+ * repo still ships and still owns.
  *
- * Two things were fixed rather than left: the paths, because reading a file
- * that is not there throws in Electron's main process and an uncaught throw
- * there is a modal dialog on somebody's screen rather than a line in a log;
- * and the windows, which opened in front of whoever was at the machine
- * instead of off the side of the screen the way test/ui does it.
+ * There were fourteen more, and they went. Every one was written against the
+ * client that was replaced and measured class names it took with it -
+ * act-card, dmp-banner, rail-icon, stage-cell - so once their paths were
+ * repointed at the one stylesheet that survived they rendered unstyled boxes
+ * and measured those: thirteen failing on forty-nine assertions, and two
+ * hanging the runner for ninety seconds each.
  *
- * Runs the check under Electron rather than a DOM shim, because the question
- * is what a browser's own stylesheet does to a <button> before ours gets a
- * say - and a shim has no such stylesheet, so it would agree with whatever
- * the rules say and prove nothing.
+ * They were not portable. The numbers they expected were the old design's -
+ * borders and insets that no longer exist - so rewriting them would have
+ * meant deciding afresh what the current design ought to be, assertion by
+ * assertion, which is writing new specs rather than fixing old ones. The
+ * browser suite in test/ui asks the same questions of the client that exists,
+ * with the real stylesheet, off-screen, and is green.
+ *
+ * Two things were fixed on the way rather than left. Reading a file that is
+ * not there throws in Electron's main process, and an uncaught throw there is
+ * a modal dialog on somebody's screen rather than a line in a log - which is
+ * how this was found. And the windows opened in front of whoever was at the
+ * machine, where test/ui puts its own off the side of the screen.
  */
 import { spawn } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'

@@ -36,8 +36,6 @@
     "test:gifs:live": "pnpm --filter @atrium/server exec tsx src/scripts/checkgifs.ts",
     "test:sharedfiles": "node test/server/sharedfiles.mjs",
     "test:css": "node test/css/run.mjs",
-    "test:css:bar": "node test/css/run.mjs update-bar.cjs",
-    "test:css:font": "node test/css/run.mjs font-scale.cjs",
     "test:desktop": "node test/desktop/run.mjs",
     "test:desktop:failure": "node test/desktop/run.mjs failure-screen.cjs",
     "test:desktop:watch": "node test/desktop/run.mjs client-watch.cjs",
