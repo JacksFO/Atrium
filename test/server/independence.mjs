@@ -248,11 +248,12 @@ if (byHost.status === 200) {
 
 console.log('\n  --- an owner can take back a role they handed out ---')
 /*
- * Reported: "doesnt let me remove roles from you, not sure if thats because
- * you are app owner". Whoever runs the machine is an ordinary member of
- * somebody else's server, so revoking a role from them has to work exactly
- * the way it does for anybody else - and the reply has to describe the
- * server it happened in, or the panel redraws from somewhere else entirely.
+ * Reported once as "doesnt let me remove roles from you" - the suspicion
+ * being that some accounts are different from others. None are. Everybody in
+ * a server somebody else made is an ordinary member of it, so revoking a
+ * role has to work exactly the way it does for anybody else - and the reply
+ * has to describe the server it happened in, or the panel redraws from
+ * somewhere else entirely.
  */
 const revoked = await call(`/api/admin/members/${host.id}/roles`, {
   method: 'POST', body: JSON.stringify({ roleId: role.id, grant: false, spaceId: theirs.id }),
