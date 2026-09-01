@@ -84,6 +84,11 @@ export function Report({ server }: { server: Api }) {
           setAt({ x: box.left, y: box.bottom + 4 })
         }}>
         <Icon name="chat" size={15} />
+        {/* The word, because the icon alone was not telling anybody what it
+            was. A speech bubble in a title bar reads as "chat" in an app
+            that is entirely chat - so the one thing it could not say is the
+            one thing it meant. */}
+        <span className="reportw">Report</span>
       </button>
 
       {at && (

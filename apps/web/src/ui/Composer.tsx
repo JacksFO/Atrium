@@ -678,7 +678,65 @@ export function Composer({
     box.current?.focus()
   }, [focusAt])
 
+
   const maySend = !permissions || permissions.includes('send_messages')
+
+  /**
+   * Start typing and it goes in the box.
+   *
+   * Coming back to the window and typing put the letters nowhere: the box has
+   * to be clicked first, and the first word of what somebody meant to say is
+   * gone by the time they notice. Every app people compare this one to picks
+   * the box up for them.
+   *
+   * Focused during keydown rather than on the character arriving, which is
+   * what makes the keystroke land: the browser finishes the event by putting
+   * the character into whatever holds focus at the end of it, so moving focus
+   * here means nothing is dropped and nothing has to be replayed by hand.
+   *
+   * Deliberately narrow, because this hijacks the keyboard for the whole
+   * window. One printable character with no modifier, and nothing already
+   * taking typing - anything else is a shortcut, a menu, or somebody writing
+   * in a box that is not this one.
+   */
+  useEffect(() => {
+    if (!maySend) return
+    const start = (e: KeyboardEvent) => {
+      /* Somebody else has already acted on it. */
+      if (e.defaultPrevented) return
+      /* A shortcut, not a letter. Shift is allowed: it is how capitals and
+         most punctuation are typed. */
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      /* One character. Enter, Escape, Tab, the arrows and the F-keys all
+         report a name here rather than a character, and every one of them
+         means something to somewhere else on screen. */
+      if (e.key.length !== 1) return
+
+      const el = box.current
+      if (!el || el === document.activeElement) return
+
+      /*
+       * Nothing else is taking typing.
+       *
+       * The search box, the name of a channel being renamed, a message being
+       * edited, the box in a dialog - all of them are somewhere somebody is
+       * deliberately writing, and stealing a letter out of one is worse than
+       * never having done this at all.
+       */
+      const on = document.activeElement as HTMLElement | null
+      if (on && (on.tagName === 'INPUT' || on.tagName === 'TEXTAREA'
+        || on.isContentEditable)) return
+
+      /* And nothing is open over the top. A dialog or a menu owns the
+         keyboard while it is up - Escape closes it, letters move through it -
+         and the conversation underneath is not what is being used. */
+      if (document.querySelector('.modal, .ctx, .scrim')) return
+
+      el.focus()
+    }
+    window.addEventListener('keydown', start)
+    return () => window.removeEventListener('keydown', start)
+  }, [maySend])
   const mayAttach = !permissions || permissions.includes('attach_files')
 
   /*

@@ -336,10 +336,17 @@ input,select,textarea{font:inherit;color:inherit}
 /* Telling us something, from wherever you are. On the left of the bar, over
    the drag region and marked no-drag so it can actually be pressed. */
 .reportb{position:absolute;top:0;bottom:0;left:8px;z-index:2;
-  width:30px;padding:0;border:0;background:transparent;color:var(--dm);
-  display:grid;place-items:center;border-radius:8px;cursor:default;
+  padding:0 9px;border:0;background:transparent;color:var(--dm);
+  display:flex;align-items:center;gap:6px;border-radius:8px;cursor:default;
   -webkit-app-region:no-drag;transition:background .12s ease,color .12s ease}
 .reportb:hover{background:var(--rz2);color:var(--fg)}
+/* The word beside it. Small and quiet - it is a way out when something is
+   wrong, not something to be drawn towards. */
+.reportw{font-size:12px;font-weight:600;letter-spacing:.01em;line-height:1}
+/* Narrow windows keep the icon and drop the word: the bar holds the window
+   controls and the title, and this is the least important thing in it. */
+@media (max-width:640px){.reportb{padding:0;width:30px;justify-content:center}
+  .reportw{display:none}}
 /* How much room is left to say it in. */
 .reportleft{font-variant-numeric:tabular-nums;font-weight:700}
 .reportleft.low{color:var(--bad)}

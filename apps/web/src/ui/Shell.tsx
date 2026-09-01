@@ -8,6 +8,7 @@ import { memberGroups, nameColourFrom, rolesOf } from '../lib/roles'
 import { voiceModerationFor } from '../lib/voiceModeration'
 import { nameLook } from '../lib/nameStyle'
 import { nameIn, nicknameIn, spaceOfChannel } from '../lib/names'
+import { memberModerationFor } from '../lib/memberModeration'
 import type { Api } from '../lib/api'
 import { remember, type World } from '../lib/world'
 import type { PermissionId } from '../lib/permissions'
@@ -685,6 +686,39 @@ export function Shell({
     }
 
     /*
+     * Removing somebody, and barring them.
+     *
+     * Both already existed, several clicks into a server's settings - which
+     * is not where anybody reaches for them. This is: you are looking at the
+     * person. Every condition is the server's own, worked out in
+     * memberModerationFor, so an item that would be refused is absent.
+     *
+     * Barring asks first. Removing somebody is undone by them clicking the
+     * invite again; barring them is undone by nobody but a moderator, and a
+     * menu item one row from "Message" is exactly where a misclick lands.
+     */
+    const mod2 = memberModerationFor(world, space, id)
+    if (mod2) {
+      items.push({ kind: 'rule' })
+      if (mod2.mayKick) {
+        items.push({
+          kind: 'item', label: `Remove from ${space!.name}`, icon: 'out', danger: true,
+          onPick: () => { void moderateMember('remove', id, mod2.spaceId) },
+        })
+      }
+      if (mod2.mayBan) {
+        items.push({
+          kind: 'item', label: `Ban from ${space!.name}`, icon: 'ban', danger: true,
+          onPick: () => setBanning({
+            id, spaceId: mod2.spaceId,
+            name: nameIn(world, space!.id, person),
+            where: space!.name,
+          }),
+        })
+      }
+    }
+
+    /*
      * Blocking, and lifting it.
      *
      * Last, and on its own, because it is the only thing in this menu that
@@ -792,6 +826,33 @@ export function Shell({
       /* Refused, or offline. Nothing has been changed here to put back. */
     }
   }
+  /**
+   * Removing somebody from a server, or barring them.
+   *
+   * The roster is asked for again rather than adjusted here: what happened is
+   * the server's answer, and the member list is drawn from that roster. The
+   * gateway also announces it to everybody else, so this is only about the
+   * window that asked.
+   */
+  const moderateMember = async (what: 'remove' | 'ban', userId: Id, spaceId: Id) => {
+    const where = `spaceId=${encodeURIComponent(spaceId)}`
+    try {
+      if (what === 'ban') {
+        await server.post(`/api/admin/members/${encodeURIComponent(userId)}/ban?${where}`, {})
+      } else {
+        await server.delete(`/api/admin/members/${encodeURIComponent(userId)}?${where}`)
+      }
+      world.loaded.delete(spaceId)
+      await loadSpace(server, world, spaceId).catch(() => {})
+      changed()
+    } catch {
+      /* Refused or offline. Nothing was changed here to put back. */
+    }
+  }
+  /* Somebody about to be barred, held until it is confirmed. */
+  const [banning, setBanning] = useState<
+    { id: Id; spaceId: Id; name: string; where: string } | null
+  >(null)
   /* A message to go to once its channel is loaded. Followed across channels,
      which is why it cannot simply scroll: the list it is in does not exist
      yet at the moment somebody presses the result. */
@@ -2209,6 +2270,31 @@ export function Shell({
                 || (naming.kind === 'rename' && naming.what === 'categories')
                 ? 'A heading keeps the case you type — it is only ever read.'
                 : 'A channel name is an address, so it is lowercased and hyphenated.'}
+          </p>
+        </Modal>
+      )}
+
+      {banning && (
+        <Modal
+          title={`Ban ${banning.name}?`}
+          onClose={() => setBanning(null)}
+          actions={
+            <>
+              <button className="btn" onClick={() => setBanning(null)}>Cancel</button>
+              <button className="btn danger" onClick={() => {
+                const job = banning
+                setBanning(null)
+                void moderateMember('ban', job.id, job.spaceId)
+              }}>
+                Ban
+              </button>
+            </>
+          }
+        >
+          <p className="hint">
+            They are taken out of {banning.where} and cannot come back on any
+            invite until somebody lifts it. Removing them instead lets them
+            back in on the next one.
           </p>
         </Modal>
       )}
