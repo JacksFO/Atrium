@@ -1,0 +1,14 @@
+{
+  "name": "@atrium/presence",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "gypfile": true,
+  "description": "What is playing and what is running, on Windows, for presence",
+  "scripts": {
+    "build": "node-gyp rebuild"
+  },
+  "dependencies": {
+    "node-addon-api": "^8.2.2"
+  }
+}

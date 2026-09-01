@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2023"],
+    "outDir": "dist",
+    "rootDir": "src",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noUncheckedIndexedAccess": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "sourceMap": true,
+
+    /*
+      A failed build must leave the last good one alone.
+
+      Without this tsc emits anyway and only signals the problem through its
+      exit code - so a type error overwrote dist with the broken output, and
+      the launcher's "running the previous build" would have been a lie about
+      code that had just failed to compile. With it, a failed build changes
+      nothing on disk and the previous build really is what runs.
+    */
+    "noEmitOnError": true
+  },
+  "include": ["src/**/*.ts"]
+}

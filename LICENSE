@@ -1,0 +1,54 @@
+Copyright © 2026 JacksFO. All rights reserved.
+
+Atrium, and the source code, design, assets and documentation in this
+repository, are proprietary. They are not open source.
+
+
+NO PERMISSION IS GRANTED
+
+No licence to use this software is granted to anyone by its being readable.
+In particular, and without limiting the above, you may not:
+
+  - copy, reproduce or download this source code, in whole or in part;
+  - modify it, or create derived or adapted works from it;
+  - distribute, publish, sublicense, sell or otherwise make it available;
+  - build, host, deploy or operate this software or anything derived from it,
+    whether for your own use, for others, or commercially;
+  - reuse its design, layout, wording or assets in another product.
+
+Reading this repository does not grant permission to do any of those things,
+and neither does forking it, cloning it, or having been able to reach it while
+it was publicly visible. A repository that anybody can see is not a repository
+that anybody may use: under copyright law the default is that all rights are
+reserved by the author, and nothing here departs from that default.
+
+The only exceptions are the rights you are given by law regardless of this
+notice, which in the United Kingdom include limited fair dealing for the
+purposes of criticism, review, quotation and news reporting.
+
+
+THIRD-PARTY COMPONENTS
+
+This software is built with open-source components - React, Fastify, Electron,
+LiveKit and others - each of which remains under its own licence, held by its
+own authors. Nothing above applies to them, and nothing above takes anything
+away from them. Their terms are in their own packages, and this notice covers
+only the work that is original to Atrium.
+
+
+NO WARRANTY
+
+This software is provided "as is", without warranty of any kind, express or
+implied, including but not limited to the warranties of merchantability,
+fitness for a particular purpose and non-infringement. In no event shall the
+author be liable for any claim, damages or other liability, whether in an
+action of contract, tort or otherwise, arising from, out of or in connection
+with this software or its use.
+
+
+PERMISSION AND CONTACT
+
+If you want to do something this notice does not allow, ask. Permission can be
+given, and it can only be given in writing by the copyright holder.
+
+  jacksfo97@gmail.com

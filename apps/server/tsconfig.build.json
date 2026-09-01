@@ -1,0 +1,23 @@
+{
+  /*
+   * What actually gets built and run.
+   *
+   * The ordinary tsconfig takes everything under src, which is right for
+   * typechecking - the tests are code and a type error in one is worth
+   * knowing about. It is wrong for the build: it compiled forty-two test
+   * files into dist, so the directory the live server runs out of held the
+   * whole test suite, along with vitest imports that only resolve because the
+   * dev dependencies happen to be installed beside it.
+   *
+   * Nothing imported them, so nothing ran - but a deleted test also leaves
+   * its compiled copy behind for ever, which is how a file naming a function
+   * that no longer exists was still sitting in dist after the source was
+   * removed.
+   *
+   * So the build takes the app and the typecheck takes everything. `pnpm
+   * typecheck` and the editor still use tsconfig.json; only what is emitted
+   * changes.
+   */
+  "extends": "./tsconfig.json",
+  "exclude": ["**/*.test.ts", "scripts/**"]
+}

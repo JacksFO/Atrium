@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:;" />
+<title>Atrium</title>
+<style>
+  /*
+    Shown when the server will not answer and there is an address to answer
+    from - a restart, a dropped connection, no network at this end.
+
+    What used to happen instead was the bundled copy of the client loading
+    from app://atrium. That works, and it is the wrong thing: the client
+    keeps everything in the browser's storage, storage belongs to an origin,
+    and app://atrium is a different origin from the server the app normally
+    loads from. So the app came up signed out, on the default theme, with the
+    panels back where they started and every toggle reset - a factory reset
+    that undid itself the next time the server answered. Nobody could tell
+    that from having actually lost it.
+
+    This page stores nothing, so there is nothing for it to look reset. It
+    says what is wrong, and it keeps trying.
+  */
+  :root {
+    --ink: #04070A;
+    --line: #1B2A33;
+    --text: #E8F3F7;
+    --dim: #93AEBB;
+    --cyan: #3FE0E8;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body { height: 100%; }
+
+  body {
+    background: radial-gradient(120% 90% at 50% 0%, #0F1A22 0%, var(--ink) 62%);
+    color: var(--text);
+    font-family: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+    display: grid;
+    place-items: center;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: default;
+    overflow: hidden;
+  }
+
+  /* There is no title bar, so this page has to provide the grab and the
+     buttons or the window cannot be moved or shut while it is showing. */
+  .bar {
+    position: fixed;
+    inset: 0 0 auto 0;
+    height: 38px;
+    -webkit-app-region: drag;
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .bar button {
+    -webkit-app-region: no-drag;
+    width: 46px;
+    height: 38px;
+    border: 0;
+    background: transparent;
+    color: var(--dim);
+    font: 15px/1 'Segoe Fluent Icons', 'Segoe MDL2 Assets', system-ui;
+    cursor: default;
+  }
+
+  .bar button:hover { background: #ffffff14; color: var(--text); }
+  .bar .x:hover { background: #E81123; color: #fff; }
+
+  .panel { max-width: 420px; padding: 0 24px; text-align: center; }
+
+  .dot {
+    width: 44px;
+    height: 44px;
+    margin: 0 auto 22px;
+    border-radius: 50%;
+    border: 2px solid var(--line);
+    border-top-color: var(--cyan);
+    animation: spin 1.1s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dot { animation: none; border-top-color: var(--line); }
+  }
+
+  h1 { font-size: 19px; font-weight: 600; letter-spacing: .2px; }
+
+  p { margin-top: 10px; color: var(--dim); font-size: 13.5px; line-height: 1.55; }
+
+  .where {
+    display: block;
+    margin-top: 6px;
+    color: var(--cyan);
+    font-size: 12.5px;
+    word-break: break-all;
+  }
+
+  .row { margin-top: 24px; display: flex; gap: 10px; justify-content: center; }
+
+  .row button {
+    padding: 9px 16px;
+    border-radius: 9px;
+    border: 1px solid var(--line);
+    background: #0E1A21;
+    color: var(--text);
+    font: 500 13px/1 inherit;
+    cursor: default;
+  }
+
+  .row button:hover { border-color: #2C4653; background: #12222B; }
+
+  .row .go { border-color: #1E4C55; background: #0E2A30; color: var(--cyan); }
+  .row .go:hover { background: #10353D; }
+
+  .note { margin-top: 18px; font-size: 12px; color: #62808F; }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <button id="min" title="Minimise" aria-label="Minimise">&#xE921;</button>
+    <button id="max" title="Maximise" aria-label="Maximise">&#xE922;</button>
+    <button class="x" id="close" title="Close" aria-label="Close">&#xE8BB;</button>
+  </div>
+
+  <main class="panel">
+    <div class="dot"></div>
+    <h1>Can&rsquo;t reach Atrium</h1>
+    <p>
+      Atrium isn&rsquo;t answering. It may be restarting, or you may be
+      offline.
+      <span class="where" id="where"></span>
+    </p>
+    <div class="row">
+      <button class="go" id="retry">Try again</button>
+      <button id="change">Use a different server</button>
+    </div>
+    <p class="note" id="note"></p>
+  </main>
+
+<script>
+  /*
+    Everything here is local. Nothing is signed in, nothing is stored, and
+    the page never talks to the network itself - the main process owns
+    retrying, because it is the one that decides what the window loads.
+  */
+  var bridge = window.atrium || {}
+  var params = new URLSearchParams(location.search)
+
+  var where = document.getElementById('where')
+  where.textContent = params.get('server') || ''
+
+  document.getElementById('min').onclick = function () { bridge.minimise && bridge.minimise() }
+  document.getElementById('max').onclick = function () { bridge.toggleMaximise && bridge.toggleMaximise() }
+  document.getElementById('close').onclick = function () { bridge.close && bridge.close() }
+
+  var retrying = false
+  function retry() {
+    if (retrying) return
+    retrying = true
+    document.getElementById('note').textContent = 'Trying…'
+    bridge.retry && bridge.retry()
+  }
+
+  document.getElementById('retry').onclick = retry
+  document.getElementById('change').onclick = function () {
+    bridge.clearServer && bridge.clearServer()
+  }
+
+  /*
+    The main process is already retrying on its own; this is the same moment
+    said out loud, so the window is not silent for half a minute. `wait` is
+    how long it intends to leave before the next one.
+  */
+  var left = Math.round(Number(params.get('wait') || 0) / 1000)
+  var note = document.getElementById('note')
+  function tick() {
+    if (retrying) return
+    if (left > 0) {
+      note.textContent = 'Trying again in ' + left + (left === 1 ? ' second' : ' seconds')
+      left -= 1
+      setTimeout(tick, 1000)
+    } else {
+      note.textContent = 'Trying…'
+    }
+  }
+  if (left > 0) tick()
+</script>
+</body>
+</html>

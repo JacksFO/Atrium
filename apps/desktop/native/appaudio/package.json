@@ -1,0 +1,14 @@
+{
+  "name": "@atrium/appaudio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Capture the sound of one program on Windows, for screen sharing",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "scripts": {
+    "build": "node-gyp rebuild"
+  },
+  "dependencies": {
+    "node-addon-api": "^8.2.2"
+  }
+}

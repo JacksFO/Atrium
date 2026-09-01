@@ -1,0 +1,89 @@
+{
+  "name": "atrium-desktop",
+  "version": "0.2.41",
+  "private": true,
+  "license": "UNLICENSED",
+  "description": "Atrium desktop client",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build:main": "node scripts/build-main.mjs",
+    "dev": "pnpm build:main && cross-env ATRIUM_DEV_URL=http://localhost:5273 node scripts/launch.mjs",
+    "build": "pnpm build:native && pnpm build:main && cross-env VITE_DEFAULT_SERVER=https://atriumapp.duckdns.org pnpm --filter @atrium/web exec vite build --outDir dist-desktop --emptyOutDir && electron-builder",
+    "pack": "pnpm build:native && pnpm build:main && cross-env VITE_DEFAULT_SERVER=https://atriumapp.duckdns.org pnpm --filter @atrium/web exec vite build --outDir dist-desktop --emptyOutDir && electron-builder --dir",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "start": "pnpm build:main && node scripts/launch.mjs",
+    "build:native": "node -e \"for (const m of ['appaudio','presence']) { try { require('child_process').execSync('npx node-gyp rebuild', { cwd: 'native/' + m, stdio: 'inherit' }) } catch (e) { console.warn('[native] ' + m + ' did not build; that part will be unavailable in this copy') } }\""
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "cross-env": "^7.0.3",
+    "electron": "^43.4.1",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.7"
+  },
+  "build": {
+    "appId": "dev.jacksfo.atrium",
+    "productName": "Atrium",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "native/appaudio/index.js",
+      "native/appaudio/build/Release/*.node",
+      "native/presence/index.js",
+      "native/presence/build/Release/*.node"
+    ],
+    "extraResources": [
+      {
+        "from": "../web/dist-desktop",
+        "to": "app"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "JacksFO",
+        "repo": "Atrium",
+        "releaseType": "release"
+      },
+      {
+        "provider": "generic",
+        "url": "https://atriumapp.duckdns.org/download"
+      }
+    ],
+    "asarUnpack": [
+      "native/appaudio/**",
+      "native/presence/**"
+    ],
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Atrium",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "Atrium-Setup-${version}.${ext}"
+    }
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  }
+}

@@ -1,0 +1,80 @@
+# LiveKit configuration for Atrium.
+#
+# Copy to livekit.yaml, put a real secret in it, and copy that same secret
+# into LIVEKIT_API_SECRET in .env. If the two disagree, clients get a token
+# LiveKit refuses and voice fails with an unhelpful error.
+#
+#   node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"
+#
+# Then run:  vendor/livekit-server.exe --config livekit.yaml
+# Bind the signalling listener to this machine's LAN address and to loopback.
+# Loopback is required: the server proxies /livekit to localhost:7880.
+# Replace the second entry with your own LAN address.
+#
+# This limits where LiveKit *listens for signalling*. It does not limit the
+# addresses it offers as media candidates: the RTC ports below bind every
+# interface, and every address the machine has when LiveKit starts is offered
+# as a route to it. Two things follow, and both look like "voice takes a while
+# to connect" rather than like a misconfiguration:
+#
+#   * The list is read once, at startup. Remove an interface afterwards and
+#     LiveKit keeps advertising it until it is restarted - a VPN uninstalled
+#     underneath a running server left a dead route being offered for a day
+#     and a half. The watchdog restarts LiveKit if it stops answering, which
+#     is also the cure for this.
+#   * A router handing out ULA IPv6 (fd00::/8) gets those offered too. They
+#     are valid on that network and useless from outside it.
+#
+# rtc.ips.excludes can filter these. It is left unset here on purpose: the
+# private-network setup in the README puts everybody on addresses exactly
+# like these, so an exclude is right for one deployment and wrong for the
+# other. If you are reachable over the public internet and your router hands
+# out ULA IPv6, add this under rtc:
+#
+#   ips:
+#     excludes:
+#       - fd00::/8
+#
+# On the machine this was written on that took the candidate list from
+# fourteen to eight, six of which no caller outside the house could have
+# used. It made no measurable difference to how long connecting takes -
+# those six were never being chosen anyway, even by a client sitting on the
+# same network - so treat it as removing waste rather than as a speed-up.
+bind_addresses:
+  - 127.0.0.1
+  - 192.168.0.5
+
+port: 7880
+
+rtc:
+  # UDP is the normal media path. TCP is the fallback for networks that block
+  # it; without the fallback some people simply cannot connect at all.
+  udp_port: 7882
+  tcp_port: 7881
+  # Must be true for anyone outside this house.
+  #
+  # With it false, LiveKit advertises the address it is bound to - a
+  # 192.168.x one - as where to send media. A remote browser dutifully
+  # tries it, fails, and the call connects with no audio: signalling
+  # succeeds over the websocket, so everything looks like it worked.
+  # True makes it discover and advertise the public address instead.
+  use_external_ip: true
+
+keys:
+  devkey: PUT_THE_SAME_SECRET_AS_ENV_HERE
+
+# Speaker detection.
+#
+# The server decides who is talking and tells everyone on an interval.
+# The default is slow enough to notice: you speak and the ring around
+# your avatar lights up late. Sampling more often costs very little for
+# a handful of people.
+audio:
+  # How often clients are told, in ms. Default is 500.
+  update_interval: 200
+  # Fewer smoothing windows reacts sooner, at the cost of flickering
+  # on very short sounds.
+  smooth_intervals: 2
+
+logging:
+  level: info

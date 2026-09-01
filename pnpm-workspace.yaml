@@ -1,0 +1,18 @@
+packages:
+  - 'apps/*'
+  # The audio addon. A package of its own so its build dependency is
+  # installed like everything else, rather than by hand on one machine.
+  - 'apps/desktop/native/*'
+
+# pnpm blocks postinstall scripts by default. Two need theirs:
+#   esbuild  - fetches the platform binary Vite and the desktop build use
+#   electron - downloads the Electron runtime
+# One thing here does compile: the per-program audio addon, which needs a
+# C++ toolchain. It is allowed to fail - the app builds without it and the
+# feature is simply not offered.
+allowBuilds:
+  esbuild: true
+  electron: true
+  # Squirrel installer support pulled in by electron-builder; we build
+  # NSIS, so it never runs.
+  electron-winstaller: false

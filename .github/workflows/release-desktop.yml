@@ -1,0 +1,280 @@
+# Build the desktop app on GitHub, and publish it there.
+#
+# WHY THIS EXISTS. Installers used to come out of Jack's house: the file was
+# served from the machine running the server, so every download went out to
+# the public address and back in through the router, at his UPLOAD speed.
+# Measured during a real install: 532 KB/s, three and a half minutes of a
+# saturated line for one 100 MB package - the same saturation that spikes his
+# ping in a game. Every friend downloading, and every automatic update after
+# that, cost him the line.
+#
+# Building here costs him nothing at all. The runner checks out the source,
+# builds the installer, and uploads it to the release from GitHub's own
+# network. He never sends the file anywhere.
+#
+# Triggered by pushing a version tag, so publishing is a deliberate act rather
+# than something that happens on every commit to main.
+name: Release desktop
+
+on:
+  push:
+    tags:
+      - 'v*'
+  # And by hand, for a re-run of a tag that failed halfway.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build and publish'
+        required: true
+
+permissions:
+  # electron-builder needs to create the release and upload assets to it.
+  # Nothing else here writes anything.
+  contents: write
+
+jobs:
+  windows:
+    # Not windows-latest, which is now an image carrying Visual Studio 2026.
+    #
+    # node-gyp cannot read that one. It finds the install, reports the version
+    # as "undefined", and then concludes there is no Visual Studio at all -
+    # while the C++ tools sit right there. It simply does not know the shape
+    # of version 18 yet. Confirmed on the runner: vswhere reported Visual
+    # Studio Enterprise 2026 18.9 WITH the C++ workload, and node-gyp failed
+    # anyway.
+    #
+    # 2022 is also what this is built with by hand, so the released binary is
+    # produced the same way as the one that has been tested locally all along.
+    runs-on: windows-2022
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      # No version here on purpose: it comes from packageManager in the root
+      # package.json. Pinned by hand it drifted, and a workflow asking for
+      # pnpm 9 could not even read pnpm-workspace.yaml - allowBuilds is
+      # 10-and-later syntax, and 9 rejects the file rather than ignoring it.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # The workspace needs node:sqlite, which is 22 and later.
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # What C++ toolchain this runner actually has. node-gyp finds Visual
+      # Studio by asking vswhere, and when it finds nothing it says so in a
+      # way that reads like a version complaint rather than an absence.
+      - name: What C++ toolchain is here
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path $vswhere)) {
+            Write-Host "::notice::no vswhere at all"
+          } else {
+            $found = & $vswhere -products * -format json | ConvertFrom-Json
+            foreach ($v in $found) {
+              Write-Host "::notice::VS $($v.displayName) $($v.installationVersion)"
+            }
+            $cpp = & $vswhere -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+            Write-Host "::notice::with C++ tools: $(if ($cpp) { $cpp } else { 'NONE' })"
+          }
+          Write-Host "::notice::node $(node --version), npm $(npm --version)"
+
+      # Built explicitly rather than through the desktop build script, which
+      # swallows a failure on purpose so a developer without build tools can
+      # still run the app. A RELEASE that quietly lost per-program audio would
+      # be far worse: nobody would notice until somebody tried to share a
+      # game's sound and found the option missing.
+      - name: Build the native audio module
+        shell: pwsh
+        working-directory: apps/desktop/native/appaudio
+        run: |
+          # Captured rather than streamed, so a failure can be turned into
+          # annotations. Actions logs need a token to read through the API and
+          # annotations do not, which matters when whoever is debugging this
+          # cannot open the web page.
+          $out = & npx --yes node-gyp rebuild --verbose 2>&1 | Out-String
+          Write-Host $out
+          if ($LASTEXITCODE -ne 0) {
+            # One annotation per line: a single one is truncated by GitHub, and
+            # the useful part of a node-gyp failure is never the last line.
+            $lines = $out -split "`r?`n" | Where-Object { $_ -match 'gyp ERR!|error|Error' }
+            foreach ($line in ($lines | Select-Object -First 9)) {
+              Write-Host "::error::$($line.Trim())"
+            }
+            exit 1
+          }
+
+      - name: Check it actually built
+        shell: pwsh
+        run: |
+          $built = 'apps/desktop/native/appaudio/build/Release/appaudio.node'
+          if (-not (Test-Path $built)) {
+            Write-Error "appaudio.node was not produced - refusing to publish a build with no per-program audio"
+            exit 1
+          }
+          Write-Host "native module: $((Get-Item $built).Length) bytes"
+
+      # The client is built with the server address baked in, the same way the
+      # local build does it - without that, a fresh install asks every new
+      # person which server to connect to.
+      - name: Build the client for the desktop shell
+        run: pnpm --filter @atrium/web exec vite build --outDir dist-desktop --emptyOutDir
+        env:
+          VITE_DEFAULT_SERVER: https://atriumapp.duckdns.org
+
+      - name: Check the address was baked in
+        shell: pwsh
+        run: |
+          # Checked for the QUOTED string, not just the address.
+          #
+          # A build define that loses its quotes has happened in this repo
+          # before, and it leaves the address in the bundle as bare tokens
+          # that are not a string at all - so looking for the address alone
+          # passes while the app still asks every new install which server to
+          # use. The quotes are the part that proves it is a value.
+          #
+          # And a literal pattern with -SimpleMatch, which is what tripped
+          # this up: it was written as a regex, escaped dots and all, and
+          # -SimpleMatch then searched the bundle for backslashes. It could
+          # never have matched, and reported a perfectly good build as broken.
+          $dist = 'apps/web/dist-desktop'
+          $quoted = '"https://atriumapp.duckdns.org"'
+          $hit = Select-String -Path "$dist/assets/*.js" -Pattern $quoted -SimpleMatch -Quiet
+          if (-not $hit) {
+            $bare = Select-String -Path "$dist/assets/*.js" -Pattern 'atriumapp.duckdns.org' -SimpleMatch -Quiet
+            if ($bare) {
+              Write-Error "the address is in the bundle but not as a string - the build define lost its quotes"
+            } else {
+              Write-Error "the built client has no server address in it - a fresh install would ask for one"
+            }
+            exit 1
+          }
+          Write-Host "server address is baked in, as a string"
+
+      - name: Build the main process
+        run: pnpm --filter atrium-desktop build:main
+
+      # --publish always: create the release for this tag and upload to it.
+      # GITHUB_TOKEN is provided by Actions and is scoped to this repository.
+      # --publish always, to the FIRST provider in the publish config - which
+      # is GitHub, deliberately. It used to be the generic one, this machine's
+      # own download folder, and a generic provider has nothing to upload TO:
+      # electron-builder built the installer, sent it nowhere, and reported
+      # success. GitHub is also the provider the updater reads.
+      #
+      # Nothing may be added to that config as a comment. electron-builder
+      # validates it against a schema and rejects the whole object on an
+      # unknown key, which is a fault that surfaces as "Invalid configuration
+      # object" from a step that has nothing else to say.
+      - name: Package and publish
+        shell: pwsh
+        working-directory: apps/desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Captured so a failure can be turned into annotations. Actions logs
+          # need a token to read through the API and annotations do not, which
+          # matters when whoever is debugging this cannot open the web page.
+          $out = & pnpm exec electron-builder --win --publish always 2>&1 | Out-String
+          Write-Host $out
+          if ($LASTEXITCODE -ne 0) {
+            $lines = $out -split "`r?`n" |
+              Where-Object { $_ -match 'error|Error|403|401|denied|permission|token|HttpError' }
+            foreach ($line in ($lines | Select-Object -First 9)) {
+              Write-Host "::error::$($line.Trim())"
+            }
+            exit 1
+          }
+
+          # What it says about publishing, whether or not it failed.
+          #
+          # This step has now succeeded twice while creating no release at
+          # all, and a step that succeeds says nothing through an error
+          # annotation. Actions logs need a token to read through the API and
+          # annotations do not - so the lines that explain what was published,
+          # skipped, or refused are lifted out as notices.
+          $said = $out -split "`r?`n" |
+            Where-Object { $_ -match 'publish|Publish|upload|Upload|skip|Skip|release|Release|GH_TOKEN|403|401' }
+          foreach ($line in ($said | Select-Object -First 12)) {
+            $clean = $line.Trim()
+            if ($clean) { Write-Host "::notice::$clean" }
+          }
+          if (-not $said) { Write-Host "::notice::electron-builder said nothing about publishing at all" }
+
+      - name: Say what was published
+        shell: pwsh
+        run: |
+          Get-ChildItem apps/desktop/release -Filter *.exe |
+            ForEach-Object { Write-Host "$($_.Name)  $([math]::Round($_.Length/1MB,1)) MB" }
+
+      # And check it actually went somewhere.
+      #
+      # The publish step reported success while publishing nothing at all:
+      # electron-builder takes the first publish entry as its target, that was
+      # the generic one, and a generic provider has nothing to upload TO. A
+      # green tick with no release is worse than a red one - it is a release
+      # everybody believes happened.
+      - name: Check the release, and publish it if it is a draft
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ github.event.inputs.tag || github.ref_name }}"
+          $headers = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept        = 'application/vnd.github+json'
+            'User-Agent'  = 'Atrium'
+          }
+          # Listed rather than looked up by tag.
+          #
+          # A draft release has no tag association at all, so /releases/tags
+          # answers 404 for one - which read as "nothing was published" while
+          # electron-builder had been publishing drafts the whole time. Every
+          # release is listed here and matched by name, so a draft is found
+          # and then complained about honestly.
+          $all = Invoke-RestMethod -Headers $headers `
+            -Uri "https://api.github.com/repos/${{ github.repository }}/releases?per_page=100"
+          $release = $all | Where-Object { $_.tag_name -eq $tag -or $_.name -eq $tag } | Select-Object -First 1
+          if (-not $release) {
+            Write-Host "::error::no release was created for $tag, though the build reported success"
+            exit 1
+          }
+          # A draft is a release that updates nobody: nobody can download one,
+          # and electron-updater cannot see one either. electron-builder
+          # creates drafts, and releaseType only applies to a release it
+          # creates - so an existing draft from an earlier run is reused and
+          # stays a draft for ever. Finish the job rather than complain about
+          # a state this workflow is supposed to leave behind.
+          if ($release.draft) {
+            Write-Host "::notice::release $tag was a draft; publishing it"
+            $release = Invoke-RestMethod -Method Patch -Headers $headers `
+              -Uri "https://api.github.com/repos/${{ github.repository }}/releases/$($release.id)" `
+              -Body (@{ draft = $false } | ConvertTo-Json)
+          }
+          if ($release.draft) {
+            Write-Host "::error::the release for $tag is still a draft, so no app will ever see it"
+            exit 1
+          }
+          Write-Host "release $tag has $($release.assets.Count) assets"
+          foreach ($a in $release.assets) {
+            Write-Host "  $($a.name)  $([math]::Round($a.size/1MB,1)) MB"
+          }
+          $exe = $release.assets | Where-Object { $_.name -like '*.exe' }
+          if (-not $exe) {
+            Write-Host "::error::the release has no installer on it"
+            exit 1
+          }
+          # Without this the updater has nothing to read, and every app carries
+          # on running whatever it already has.
+          $yml = $release.assets | Where-Object { $_.name -eq 'latest.yml' }
+          if (-not $yml) {
+            Write-Host "::error::the release has no latest.yml, so no app will ever see it"
+            exit 1
+          }

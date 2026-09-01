@@ -1,0 +1,26 @@
+{
+  "name": "Atrium",
+  "short_name": "Atrium",
+  "description": "Private chat, voice and screen sharing.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#04070A",
+  "theme_color": "#04070A",
+  "categories": ["social"],
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

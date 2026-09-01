@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:;" />
+<title>Atrium</title>
+<style>
+  /*
+    The window between the icon being clicked and the app being on screen.
+
+    That gap is a second or two on a good day and much longer on a cold start,
+    a slow connection, or an update - and the app deliberately does not show
+    its window until it has something to draw, so without this there is
+    nothing at all. Nothing at all is indistinguishable from a launch that
+    failed: people click the icon again, and then there are two.
+
+    Same palette as the app, so it reads as the beginning of Atrium rather
+    than a separate program that happens to appear first.
+  */
+  :root {
+    --ink: #04070A;
+    --line: #1B2A33;
+    --text: #E8F3F7;
+    --dim: #93AEBB;
+    --cyan: #3FE0E8;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    background: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: default;
+    overflow: hidden;
+  }
+
+  body {
+    display: grid;
+    place-items: center;
+    font-family: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+    /* The whole panel is the drag handle - there is no title bar to grab. */
+    -webkit-app-region: drag;
+  }
+
+  .panel {
+    width: 100%;
+    height: 100%;
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    background: radial-gradient(120% 90% at 50% 0%, #0F1A22 0%, var(--ink) 62%);
+    box-shadow: 0 24px 60px -20px rgba(0, 0, 0, .8);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    padding: 26px;
+  }
+
+  /* Drawn rather than shipped as an image: one less file to keep in step with
+     the icon, and it stays sharp at any scaling factor. */
+  .mark { position: relative; width: 92px; height: 92px; display: grid; place-items: center; }
+  .ring { position: absolute; inset: 0; border-radius: 50%; border: 2px solid rgba(63, 224, 232, .16); }
+  .arc {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    border-top-color: var(--cyan);
+    border-right-color: var(--cyan);
+    animation: spin 1.15s cubic-bezier(.5, .12, .4, .9) infinite;
+    filter: drop-shadow(0 0 8px rgba(63, 224, 232, .55));
+  }
+  .glyph {
+    font-size: 38px;
+    font-weight: 800;
+    letter-spacing: -.03em;
+    color: var(--cyan);
+    text-shadow: 0 0 22px rgba(63, 224, 232, .45);
+  }
+
+  .words { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .name { font-size: 15px; font-weight: 700; letter-spacing: .02em; color: var(--text); }
+  .state { font-size: 12px; color: var(--dim); min-height: 15px; text-align: center; }
+
+  /*
+    The bar only exists when there is something to measure.
+
+    Starting up has no percentage worth showing - it is over before a bar
+    could fill - so one drawn at 0% for a second reads as being stuck. It
+    appears when a download or an update reports progress, and not otherwise.
+  */
+  .bar {
+    width: 190px;
+    height: 5px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, .07);
+    overflow: hidden;
+    display: none;
+  }
+  .bar.on { display: block; }
+  .fill {
+    height: 100%;
+    width: 0%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, #2FB8DE, var(--cyan));
+    box-shadow: 0 0 12px -2px rgba(63, 224, 232, .8);
+    transition: width .18s ease-out;
+  }
+
+  /* A download whose total nobody told us about still has to look alive. */
+  .bar.unknown .fill {
+    width: 34%;
+    animation: sweep 1.25s ease-in-out infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes sweep {
+    0% { transform: translateX(-120%); }
+    100% { transform: translateX(360%); }
+  }
+
+  /* Motion turned off leaves a mark that sits still and words that do not. */
+  @media (prefers-reduced-motion: reduce) {
+    .arc { animation: none; border-right-color: transparent; }
+    .bar.unknown .fill { animation: none; width: 100%; opacity: .5; }
+  }
+</style>
+</head>
+<body>
+  <div class="panel">
+    <div class="mark">
+      <div class="ring"></div>
+      <div class="arc"></div>
+      <div class="glyph">A</div>
+    </div>
+    <div class="words">
+      <div class="name">Atrium</div>
+      <div class="state" id="state">Starting…</div>
+    </div>
+    <div class="bar" id="bar"><div class="fill" id="fill"></div></div>
+  </div>
+
+  <script>
+    /*
+      Driven from the main process, which is the only thing that knows.
+
+      It says what is happening rather than counting for its own sake: a
+      percentage that sits at 40% because a fetch has stalled is worse than a
+      word. The bar appears only when there is a real total to divide by.
+    */
+    const els = {
+      state: document.getElementById('state'),
+      bar: document.getElementById('bar'),
+      fill: document.getElementById('fill'),
+    }
+
+    window.setSplash = function (next) {
+      if (typeof next.text === 'string') els.state.textContent = next.text
+
+      if (next.percent === null || next.percent === undefined) {
+        els.bar.classList.remove('on', 'unknown')
+        return
+      }
+      els.bar.classList.add('on')
+      if (Number.isFinite(next.percent)) {
+        els.bar.classList.remove('unknown')
+        els.fill.style.width = Math.max(0, Math.min(100, next.percent)) + '%'
+      } else {
+        // Progress with no total: keep it moving rather than pretending.
+        els.bar.classList.add('unknown')
+      }
+    }
+  </script>
+</body>
+</html>

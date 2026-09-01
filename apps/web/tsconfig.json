@@ -1,0 +1,41 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+
+    /* Every one of these is here because of a bug this app actually had.
+
+       `strict` and `strictNullChecks` for the shapes: a presence event that
+       carried a boolean was read as a word and came out undefined, and every
+       dot in the app stayed grey. A type on the wire would have refused it.
+
+       `noUncheckedIndexedAccess` because `list[0]` is not a value, it is a
+       maybe — the crash that took the whole screen down was a lookup that
+       found nothing and was used as though it had.
+
+       `exactOptionalPropertyTypes` because "absent" and "present but
+       undefined" were treated as the same thing, and a profile update that
+       carried no status wrote `undefined` over somebody's presence.
+
+       `noImplicitOverride` and `noFallthroughCasesInSwitch` because the
+       adapter is one long switch over event names, and a case that fell
+       through to the next is exactly how a message-delete would become
+       something else. */
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "types": ["vite/client"]
+  },
+  "include": ["src"]
+}
