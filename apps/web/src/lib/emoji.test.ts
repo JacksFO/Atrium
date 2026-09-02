@@ -33,8 +33,17 @@ describe('finding an emoji by name', () => {
      a different thing from the list it came out of. */
   it('and keeps the headings of the groups that still have something in', () => {
     const out = groupsFor('fire')
-    expect(out).toHaveLength(1)
-    expect(out[0]?.[0]).toBe('Nature')
+    /* Named rather than counted. This asserted "exactly one group" when the
+       table was small enough that only one had a match in it - and then the
+       table grew a fire engine, and a test about headings started failing
+       about arithmetic. What it is for is that a heading comes back with its
+       matches and an empty group does not come back at all. */
+    expect(out.map(([name]) => name)).toContain('Nature')
+    for (const [name, list] of out) {
+      expect(list.length, name + ' came back with no matches in it').toBeGreaterThan(0)
+    }
+    expect(out.map(([name]) => name), 'a group with no match was kept')
+      .not.toContain('Food')
   })
 })
 
@@ -74,5 +83,60 @@ describe('every name in the table', () => {
     for (const [name, list] of EMOJI_GROUPS) {
       expect(list.length, `${name} is empty`).toBeGreaterThan(0)
     }
+  })
+})
+
+/**
+ * Every shortcode this app has ever shipped still resolves.
+ *
+ * The table grew from fifty-odd to around three hundred, and the one thing
+ * that growth must not do is rename anything. A shortcode is written into the
+ * message when somebody sends it, so a name that stops existing does not
+ * degrade - it turns back into the literal text `:shush:` in a message that
+ * has been sitting in a channel for months.
+ *
+ * The list below is read off the version before the table was widened, so it
+ * is what was actually shipped rather than what anybody remembers shipping.
+ */
+const SHIPPED = [
+  'grinning', 'smile', 'joy', 'rofl', 'slight_smile', 'wink',
+  'blush', 'heart_eyes', 'sunglasses', 'thinking', 'neutral', 'sleeping',
+  'sob', 'sweat_smile', 'scream', 'skull', 'shush', 'salute',
+  'melting', 'eyes', 'thumbsup', 'thumbsdown', 'clap', 'raised_hands',
+  'pray', 'handshake', 'muscle', 'wave', 'point_right', 'ok_hand',
+  'fire', 'sparkles', 'star', 'zap', 'rainbow', 'moon',
+  'sun', 'snow', 'leaf', 'dog', 'cat', 'pizza',
+  'burger', 'fries', 'coffee', 'beer', 'cake', 'popcorn',
+  'rocket', 'game', 'headphones', 'trophy', 'gift', 'bulb',
+  'gear', 'lock', 'bell', 'tada', '100', 'heart',
+  'broken_heart', 'check', 'x', 'warning', 'question'
+]
+
+describe('the names that were already in messages', () => {
+  it('all still resolve', () => {
+    const missing = SHIPPED.filter((n) => !BY_NAME.has(n))
+    expect(missing, 'these would turn back into text in old messages').toEqual([])
+  })
+
+  /* And still mean the same thing. A name kept but pointed at a different
+     face is the same fault wearing a disguise. */
+  it('and every one is still a single shortcode with a glyph', () => {
+    for (const name of SHIPPED) {
+      expect(BY_NAME.get(name), name + ' has no glyph').toBeTruthy()
+    }
+  })
+})
+
+describe('the widened table', () => {
+  /* The reason for widening it: somebody looking for an ordinary thing finds
+     one. These are the searches that came back empty before. */
+  it('has the ordinary things somebody would look for', () => {
+    for (const name of ['horse', 'tea', 'car', 'book', 'key', 'cry', 'wine', 'clock']) {
+      expect(searchEmoji(name).length, 'nothing found for ' + name).toBeGreaterThan(0)
+    }
+  })
+
+  it('and is big enough to be worth searching', () => {
+    expect(ALL_EMOJI.length).toBeGreaterThan(250)
   })
 })
