@@ -69,7 +69,7 @@ export function Search({ server, world, onGoto, onClose }: {
 
       <div className="searchp">
         <input
-          placeholder="Search everything you can read"
+          placeholder="Search, or from:someone in:channel has:image"
           value={q}
           autoFocus
           onChange={(e) => setQ(e.target.value)}
@@ -77,7 +77,11 @@ export function Search({ server, world, onGoto, onClose }: {
         />
         <p className="hint">
           {error ? error
-            : state === 'idle' ? 'Two letters or more.'
+            /* The filters, said once, where somebody is already looking at an
+               empty box wondering what to type. They are only discoverable if
+               something says them - a search box gives no hint that it knows
+               more than words. */
+            : state === 'idle' ? 'Two letters or more. from: in: has: before: after:'
               : state === 'looking' ? 'Looking…'
                 : `${hits.length} ${hits.length === 1 ? 'message' : 'messages'}`}
         </p>

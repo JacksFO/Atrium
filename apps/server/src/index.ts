@@ -40,6 +40,7 @@ import { startDynamicDns } from './dyndns.js'
 import { reconcileUploads, sweepDeleted, knownMissing, rememberMissing, newlyMissing } from './uploads.js'
 import { looksLike, SNIFF_BYTES, describedTypes } from './filetype.js'
 import { saveFromUrl } from './fetchimage.js'
+import { isEmptySearch, parseSearch } from './searchQuery.js'
 import { signatureValid, signPath } from './signing.js'
 import httpProxy from '@fastify/http-proxy'
 import { serverMuted, gatewayStats } from './gateway.js'
@@ -1941,31 +1942,137 @@ app.get('/api/search', async (req, reply) => {
   const { q } = req.query as { q?: string }
   if (!q || q.length < 2) return { results: [] }
 
-  const match = ftsQuery(q)
-  if (!match) return { results: [] }
+  /*
+   * The filters come out first, and what is left is what to match on.
+   *
+   * `from:bailey in:general has:image` is a real search with no words in it -
+   * so the words are optional now, and a search with none of them skips the
+   * full-text index entirely rather than matching everything and filtering
+   * afterwards. searchQuery.ts is the little language and is tested on its
+   * own; this is what the answers mean.
+   */
+  const terms = parseSearch(q)
+  if (isEmptySearch(terms)) return { results: [] }
 
-  // FTS5 in place of a search service. `?` is bound, so this is not injectable.
-  // The channel filter keeps private conversations out of everyone else's
-  // results - a search box is the easiest place to leak a DM by accident.
-  const results = db
-    .prepare(
-      `SELECT m.* FROM messages_fts f
-         JOIN messages m ON m.rowid = f.rowid
-         JOIN channels c ON c.id = m.channel_id
-        WHERE messages_fts MATCH ?
-          AND m.deleted_at IS NULL
-          AND (
+  const match = terms.text ? ftsQuery(terms.text) : ''
+  if (terms.text && !match) return { results: [] }
+
+  /*
+   * A person, by whichever name the searcher knows them by.
+   *
+   * Their username, their display name, or the nickname they wear in a
+   * server. Names are not unique across those, so this takes everybody who
+   * answers to it rather than picking one - "from:jack" meaning three people
+   * is a better answer than it silently meaning the wrong one.
+   */
+  const whoFilter: string[] = []
+  if (terms.from) {
+    const like = `%${terms.from.replace(/[%_\\]/g, '\\$&')}%`
+    const found = db.prepare(
+      `SELECT DISTINCT u.id AS id FROM users u
+         LEFT JOIN member_nicknames n ON n.user_id = u.id
+        WHERE u.username LIKE ? ESCAPE '\\'
+           OR u.display_name LIKE ? ESCAPE '\\'
+           OR n.nickname LIKE ? ESCAPE '\\'
+        LIMIT 25`
+    ).all(like, like, like) as Array<{ id: string }>
+    /* Nobody by that name is an empty result rather than no filter at all -
+       otherwise a typo quietly widens the search instead of narrowing it. */
+    if (!found.length) return { results: [] }
+    for (const r of found) whoFilter.push(r.id)
+  }
+
+  /* And a channel, by name, among the ones that exist. Same rule: a name
+     nothing answers to means nothing found. */
+  const whereFilter: string[] = []
+  if (terms.in) {
+    const like = `%${terms.in.replace(/[%_\\]/g, '\\$&')}%`
+    const found = db.prepare(
+      `SELECT id FROM channels WHERE name LIKE ? ESCAPE '\\' LIMIT 25`
+    ).all(like) as Array<{ id: string }>
+    if (!found.length) return { results: [] }
+    for (const r of found) whereFilter.push(r.id)
+  }
+
+  /* Built as text because the number of ids is not known until now, and every
+     one of them is still bound - the SQL carries `?`, never a value. */
+  const holes = (n: number): string => Array.from({ length: n }, () => '?').join(', ')
+  const extra: string[] = []
+  /* Strings throughout: every bound value here is an id or a millisecond, and
+     the driver's own input type is what keeps it that way. */
+  const bound: Array<string | number> = []
+  if (whoFilter.length) {
+    extra.push(`AND m.author_id IN (${holes(whoFilter.length)})`)
+    bound.push(...whoFilter)
+  }
+  if (whereFilter.length) {
+    extra.push(`AND m.channel_id IN (${holes(whereFilter.length)})`)
+    bound.push(...whereFilter)
+  }
+  if (terms.before !== undefined) { extra.push('AND m.created_at < ?'); bound.push(terms.before) }
+  if (terms.after !== undefined) { extra.push('AND m.created_at >= ?'); bound.push(terms.after) }
+  if (terms.has === 'link') {
+    /* What the message renderer calls a link is an http address in the body.
+       Asked of the text rather than of a table, because links are not stored
+       anywhere - they are read out of the words every time they are drawn. */
+    extra.push("AND (m.body LIKE '%http://%' OR m.body LIKE '%https://%')")
+  }
+  if (terms.has === 'image') {
+    extra.push("AND EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.id AND a.mime LIKE 'image/%')")
+  }
+  if (terms.has === 'file') {
+    extra.push('AND EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.id)')
+  }
+  if (terms.has === 'poll') {
+    extra.push('AND EXISTS (SELECT 1 FROM polls p WHERE p.message_id = m.id)')
+  }
+  const filters = extra.length ? ' ' + extra.join(' ') : ''
+
+  /*
+   * Two shapes of the same question.
+   *
+   * With words, the full-text index decides which rows and in what order, and
+   * the filters narrow what it found. With no words - "everything Bailey
+   * posted a picture of" - there is nothing to match on and nothing to rank
+   * by, so the index is not touched at all and the newest come first. Running
+   * the index over a match-everything query instead would be the same answer
+   * arrived at expensively.
+   *
+   * `?` is bound throughout, including every id in the filters: the only
+   * thing built as text is how many holes to leave.
+   *
+   * The conversation clause keeps private conversations out of everybody
+   * else's results - a search box is the easiest place to leak a DM by
+   * accident.
+   */
+  const mine = `AND (
             c.kind IN ('text', 'voice')
             OR EXISTS (
-              SELECT 1 FROM container_members m
-                JOIN containers k ON k.id = m.container_id AND k.kind IN ('dm','group')
-               WHERE m.container_id = c.id AND m.user_id = ?
+              SELECT 1 FROM container_members cm
+                JOIN containers k ON k.id = cm.container_id AND k.kind IN ('dm','group')
+               WHERE cm.container_id = c.id AND cm.user_id = ?
             )
-          )
-        ORDER BY rank
-        LIMIT 50`
-    )
-    .all(match, user.id)
+          )`
+
+  const results = match
+    ? db.prepare(
+        `SELECT m.* FROM messages_fts f
+           JOIN messages m ON m.rowid = f.rowid
+           JOIN channels c ON c.id = m.channel_id
+          WHERE messages_fts MATCH ?
+            AND m.deleted_at IS NULL
+            ${mine}${filters}
+          ORDER BY rank
+          LIMIT 50`
+      ).all(match, user.id, ...bound)
+    : db.prepare(
+        `SELECT m.* FROM messages m
+           JOIN channels c ON c.id = m.channel_id
+          WHERE m.deleted_at IS NULL
+            ${mine}${filters}
+          ORDER BY m.created_at DESC
+          LIMIT 50`
+      ).all(user.id, ...bound)
 
   // Private channels are filtered after the query rather than inside it: the
   // access rule involves roles and individual members, which is more than an

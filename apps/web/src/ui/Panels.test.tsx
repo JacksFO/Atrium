@@ -89,6 +89,20 @@ describe('the search panel', () => {
     expect(draw()).toContain('Two letters or more')
   })
 
+  /*
+   * And says what else it understands.
+   *
+   * The filters are only discoverable if something says them - a search box
+   * gives no hint that it knows more than words, and somebody who does not
+   * know `from:` exists will never type it.
+   */
+  it('and says which filters it knows', () => {
+    const out = draw()
+    for (const filter of ['from:', 'in:', 'has:', 'before:', 'after:']) {
+      expect(out, filter + ' is nowhere anybody would find it').toContain(filter)
+    }
+  })
+
   /* The server decides what an account can reach, on every result: being able
      to see a channel and being allowed to read what was said before you
      arrived are different questions, and it asks both. A client that filtered
