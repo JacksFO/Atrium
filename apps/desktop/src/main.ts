@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto'
 import { autoUpdater } from 'electron-updater'
 import { matchGame } from './matchgame.js'
 import { movedDeliberately } from './seek.js'
+import { iconFor, noIconYet, wantsIconRead, withIconRead, type IconHunt } from './gameIcon.js'
 import { whatsNewFor, type Saved } from './whatsnew.js'
 import { whatToTidy, humanBytes } from './tidy.js'
 import { join, normalize } from 'node:path'
@@ -1472,8 +1473,27 @@ let gameExe = ''
  */
 let ticksSinceLook = 0
 const LOOK_ROUND_EVERY = 12
-let lastIconFor = ''
-let lastIcon: { width: number; height: number; rgba: Uint8Array } | undefined
+/*
+ * Where the reading of the current game's icon has got to.
+ *
+ * Not a picture and a name any more, because one read is not enough: the
+ * shell hands back the generic application icon for an entry it has not
+ * extracted yet, and the one moment this was ever asked was seconds after a
+ * game launched. gameIcon.ts is the rule and has the whole story.
+ */
+let iconHunt: IconHunt = noIconYet('')
+
+/**
+ * Read the icon, if the hunt still wants one.
+ *
+ * Costs a string comparison on the hot path, which is where a game somebody
+ * has had open for three hours spends every tick.
+ */
+async function keepIconFresh(exe: string, name: string): Promise<void> {
+  if (!wantsIconRead(iconHunt, name)) return
+  const got = await nativePresence().iconForNameLater(exe)
+  iconHunt = withIconRead(iconHunt, name, got)
+}
 
 async function musicNow(): Promise<Music | null> {
   const playing = await nativePresence().whatIsPlayingLater(false)
@@ -1519,7 +1539,16 @@ async function gameNow(): Promise<Game | null> {
     ticksSinceLook++
     if (nativePresence().stillRunning(gamePid, gameExe)) {
       const still: Game = { kind: 'game', name: gameSince.name, since: gameSince.at }
-      if (lastIcon) still.artPixels = lastIcon
+      /* Here too, and not only on the full look round.
+       *
+       * The shell can take a moment to extract an icon it has not been asked
+       * for lately, and a full look round is only once a minute - so waiting
+       * for one would leave the generic icon up for a minute at a time. This
+       * asks nothing at all once the answer has settled, which it has for
+       * every tick of the hours this path exists for. */
+      await keepIconFresh(gameExe, gameSince.name)
+      const mine = iconFor(iconHunt, gameSince.name)
+      if (mine) still.artPixels = mine
       return still
     }
     // It stopped. Fall through and look properly.
@@ -1534,15 +1563,14 @@ async function gameNow(): Promise<Game | null> {
     gameSince = null
     gamePid = 0
     gameExe = ''
-    lastIconFor = ''
-    lastIcon = undefined
+    iconHunt = noIconYet('')
     return null
   }
   // The clock starts when it was first seen, not when it was first reported.
   if (!gameSince || gameSince.name !== name) gameSince = { name, at: Date.now() }
 
   /*
-   * The icon out of the game's own executable, read once.
+   * The icon out of the game's own executable.
    *
    * Which means every game has one, including any nobody put on a list -
    * somebody installs something obscure and their friends see its real icon.
@@ -1550,9 +1578,10 @@ async function gameNow(): Promise<Game | null> {
    * banner, and honest about where it came from.
    *
    * The first read warms the shell's image lists and costs about half a
-   * second; the ones after are ten milliseconds. Since it cannot change while
-   * the game is the same game, it is done when the game changes and not
-   * again.
+   * second; the ones after are ten milliseconds. It used to be read once, on
+   * the grounds that it cannot change while the game is the same game - which
+   * is true of the icon and not of the shell's answer about it. See
+   * gameIcon.ts.
    */
   const exe = running.find((n) => gamesList()[String(n).toLowerCase()] === name)
   /*
@@ -1563,14 +1592,11 @@ async function gameNow(): Promise<Game | null> {
     gameExe = String(exe)
     gamePid = nativePresence().pidForName(gameExe)
   }
-  if (exe && lastIconFor !== name) {
-    lastIconFor = name
-    const icon = await nativePresence().iconForNameLater(exe)
-    lastIcon = icon ?? undefined
-  }
+  if (exe) await keepIconFresh(String(exe), name)
 
   const out: Game = { kind: 'game', name, since: gameSince.at }
-  if (lastIcon) out.artPixels = lastIcon
+  const art = iconFor(iconHunt, name)
+  if (art) out.artPixels = art
   return out
 }
 
