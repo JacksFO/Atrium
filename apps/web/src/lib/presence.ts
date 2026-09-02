@@ -74,9 +74,25 @@ export class Presences {
     if (u.presence) this.chose.set(u.id, u.presence)
   }
 
-  /** Whether they are here at all. */
+  /**
+   * Whether a socket is open for them. Not the same question as whether they
+   * look like they are here.
+   */
   isHere(id: Id): boolean {
     return this.here.has(id)
+  }
+
+  /**
+   * Whether they appear to be here, which is what anything on screen means.
+   *
+   * Somebody who has chosen to appear offline has a socket open like anybody
+   * else, so asking isHere puts them in the online count, in the Online tab
+   * of the friends list, and in the "here" half of a row - while the dot
+   * beside their name says offline. Three answers to one question, and the
+   * setting only worked in the one place that happened to ask properly.
+   */
+  appearsHere(id: Id): boolean {
+    return this.statusFor(id) !== 'offline'
   }
 
   /** The one answer: what to draw under this person's name. */

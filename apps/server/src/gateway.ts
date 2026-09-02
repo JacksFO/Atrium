@@ -897,7 +897,56 @@ function onlineIdsFor(viewerId: string): string[] {
    * lasts.
    */
   for (const id of goingOffline.keys()) here.add(id)
-  return [...here].filter((id) => seen.has(id))
+  /*
+   * Anybody who has chosen to appear offline is left out.
+   *
+   * The client draws the dot from the presence on their row, so the dot was
+   * already right - but this list is the authoritative answer to "who is
+   * here", and it counted them. That is the difference between a setting
+   * somebody trusts and one that is a coat of paint: the server has to be
+   * the thing that does not say.
+   *
+   * Except to themselves. Somebody appearing offline still has to see that
+   * their own app is connected, and an app that says you are offline while
+   * you are using it reads as broken.
+   */
+  const hidden = invisibleIds()
+  return [...here].filter((id) => seen.has(id) && (id === viewerId || !hidden.has(id)))
+}
+
+/**
+ * Who has chosen to appear offline, as a set.
+ *
+ * Asked once per list rather than per person: the list is built for every
+ * connection and a query per member would be a query per member.
+ */
+function invisibleIds(): Set<string> {
+  const rows = db.prepare(
+    "SELECT id FROM users WHERE presence = 'offline'"
+  ).all() as Array<{ id: string }>
+  return new Set(rows.map((r) => r.id))
+}
+
+/** Whether this person has chosen to appear offline. */
+function appearsOffline(userId: string): boolean {
+  const row = db.prepare('SELECT presence FROM users WHERE id = ?').get(userId) as
+    { presence?: string } | undefined
+  return row?.presence === 'offline'
+}
+
+/**
+ * How long somebody is stopped from talking in the server a channel is in, or
+ * 0 for not at all.
+ *
+ * One function because two things ask it - sending and reacting - and a
+ * second copy of "which server is this channel in, and are they timed out in
+ * it" is how the two come to disagree.
+ */
+function timedOutHere(channelId: string, userId: string): number {
+  if (isDirect(channelId)) return 0
+  const inSpace = spaceOfChannel(channelId)
+  if (!inSpace) return 0
+  return timedOutUntil(inSpace, userId)
 }
 
 /** Whether any socket is still open for them, without asking the database. */
@@ -1864,7 +1913,11 @@ export function attachGateway(server: Server): void {
          * before the announcement below, so the two cannot cross.
          */
         cancelOffline(user.id)
-        pushAboutMember(user.id, { t: 'presence', userId: user.id, online: true }, socket)
+        /* Unless they have chosen to appear offline, in which case arriving
+           is the one thing that must not be announced. */
+        if (!appearsOffline(user.id)) {
+          pushAboutMember(user.id, { t: 'presence', userId: user.id, online: true }, socket)
+        }
         return
       }
 
@@ -1964,17 +2017,12 @@ export function attachGateway(server: Server): void {
            * Asked against the clock, so a timeout that has run out needs
            * nothing to have happened for it to be over.
            */
-          if (!isDirect(channelId)) {
-            const inSpace = spaceOfChannel(channelId)
-            if (inSpace) {
-              const until = timedOutUntil(inSpace, client.user.id)
-              if (until > 0) {
-                const mins = Math.ceil((until - Date.now()) / 60000)
-                return refuse(
-                  `You cannot send messages in this server for another ${mins} minute${mins === 1 ? '' : 's'}.`
-                )
-              }
-            }
+          const stopped = timedOutHere(channelId, client.user.id)
+          if (stopped > 0) {
+            const mins = Math.ceil((stopped - Date.now()) / 60000)
+            return refuse(
+              `You cannot send messages in this server for another ${mins} minute${mins === 1 ? '' : 's'}.`
+            )
           }
           /*
            * Slow mode, where the channel is in it.
@@ -2284,6 +2332,16 @@ export function attachGateway(server: Server): void {
           // After the lookup, because the answer depends on which server the
           // message is in and that is not known until we have found it.
           if (!may(client.user, 'add_reactions', owner.channel_id)) return
+          /*
+           * And not while they are timed out.
+           *
+           * A reaction is a way of talking - during the argument a timeout is
+           * for, a row of clown faces is exactly the thing it was meant to
+           * stop. Silent because a reaction has no acknowledgement to refuse:
+           * the client draws nothing until the server says it happened, so
+           * nothing happening is already the answer.
+           */
+          if (timedOutHere(owner.channel_id, client.user.id) > 0) return
           if (isDirect(owner.channel_id)) {
             if (!dmMembers(owner.channel_id).includes(client.user.id)) return
           } else if (!canAccessChannel(client.user.id, owner.channel_id)) {

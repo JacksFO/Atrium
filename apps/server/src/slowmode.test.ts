@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   cleanSlowmode, mayIgnoreSlowmode, slowmodeMessage, SLOWMODE_MAX, waitLeft,
 } from './slowmode.js'
+import { db } from './db.js'
 
 /**
  * Waiting between messages.
@@ -107,5 +108,32 @@ describe('what somebody is told', () => {
   it('and minutes when there are a lot of them', () => {
     expect(slowmodeMessage(412)).toContain('7 minutes')
     expect(slowmodeMessage(60)).toContain('1 minute')
+  })
+})
+
+/**
+ * And the question it asks can be answered from an index.
+ *
+ * Slow mode asks "when did this person last speak here" on the way in to
+ * every message. Answered through the channel index alone, that means finding
+ * the channel and walking it newest-first until the author matches - so the
+ * cost is how far back they last spoke, and for somebody who has never spoken
+ * there it is the whole channel.
+ *
+ * Measured on fifty thousand messages before the index existed: 392us against
+ * 0.57us, which is 687 times. It is synchronous, so the difference is blocked
+ * event loop for everybody else in the app - on the path every message takes,
+ * in exactly the channel busy enough to be put into slow mode.
+ */
+describe('the question slow mode asks', () => {
+  it('is answered from an index rather than by walking the channel', () => {
+    const plan = db.prepare(
+      `EXPLAIN QUERY PLAN
+       SELECT created_at AS at FROM messages
+        WHERE channel_id = ? AND author_id = ? AND deleted_at IS NULL
+        ORDER BY created_at DESC LIMIT 1`
+    ).all('c', 'u') as Array<{ detail: string }>
+    const how = plan.map((r) => r.detail).join(' | ')
+    expect(how, `it walks the channel: ${how}`).toContain('author_id=?')
   })
 })

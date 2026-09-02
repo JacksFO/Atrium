@@ -583,6 +583,24 @@ addColumn('channels', 'is_private', 'INTEGER DEFAULT 0')
 addColumn('channels', 'slowmode_seconds', 'INTEGER NOT NULL DEFAULT 0')
 
 /*
+ * "When did this person last speak in this channel", which is the one
+ * question slow mode asks and it asks it on the way in to every message.
+ *
+ * idx_messages_channel answers it by finding the channel and then walking it
+ * newest-first until the author matches - so the cost is how far back that
+ * person last spoke, and for somebody who has never spoken there it is the
+ * whole channel. Measured on fifty thousand messages: 392us a message,
+ * against 0.57us with this. That is 687 times, and it is synchronous, so it
+ * is 392us of blocked event loop for everybody else in the app - on the path
+ * every message takes, in exactly the channel busy enough to have been put
+ * into slow mode in the first place.
+ */
+db.exec(
+  `CREATE INDEX IF NOT EXISTS idx_messages_author_in
+     ON messages(channel_id, author_id, created_at DESC)`
+)
+
+/*
  * Where a server sits in one person's rail.
  *
  * On the membership rather than on the server, because the order is the

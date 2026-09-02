@@ -42,7 +42,7 @@ export function Friends({
   const sent = friends.filter((f) => f.state === 'outgoing')
 
   const shown = tab === 'online'
-    ? accepted.filter((f) => world.presence.isHere(f.id))
+    ? accepted.filter((f) => world.presence.appearsHere(f.id))
     : tab === 'all' ? accepted
       : tab === 'pending' ? incoming
         : sent
@@ -86,7 +86,7 @@ export function Friends({
             key={f.id}
             friend={f}
             tab={tab}
-            here={world.presence.isHere(f.id)}
+            here={world.presence.appearsHere(f.id)}
             onOpenDm={() => onOpenDm(f.id)}
             onAccept={() => onAccept(f.id)}
             onRemove={() => onRemove(f.id)}

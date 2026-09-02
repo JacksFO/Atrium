@@ -134,6 +134,28 @@ module.exports = {
     await wait(900)
     check('and alt+down comes back', (await js(OPEN)) === wentTo, await js(OPEN))
 
+    // --- and the two the sheet claims that nothing else here proves --------
+    /*
+     * The sheet is only worth having if everything on it works, and these two
+     * were listed and untested - which is the same fault as listing a
+     * shortcut that was never bound, arrived at from the other direction.
+     */
+    await js(press('f', { ctrl: true }))
+    await wait(700)
+    const searching = await js(`!!document.querySelector('.searchp input')`)
+    check('ctrl+f opens search', searching === true, searching)
+    await js(press('f', { ctrl: true }))
+    await wait(500)
+
+    /* And a server by number. With one server this can only prove that the
+       key is taken and lands somewhere sensible rather than doing nothing. */
+    const servers = await js(`document.querySelectorAll('.rail button, .srv').length`)
+    await js(press('1', { ctrl: true }))
+    await wait(800)
+    const afterOne = await js(OPEN)
+    check('ctrl+1 keeps a conversation open rather than emptying the app',
+      typeof afterOne === 'string' && afterOne.length > 0, { servers, afterOne })
+
     // --- the sheet ---------------------------------------------------------
     await js(press('/', { ctrl: true }))
     await wait(600)

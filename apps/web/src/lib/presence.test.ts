@@ -127,3 +127,46 @@ describe('choosing how you appear', () => {
     expect(p.statusFor('u1')).toBe('offline')
   })
 })
+
+/**
+ * And appearing offline has to work everywhere, not in one place.
+ *
+ * The dot beside somebody's name asked how they appear; the online count, the
+ * Online tab of the friends list and the Online/Offline split of the member
+ * list all asked whether a socket was open. So somebody who chose to appear
+ * offline sat in the Online group with an offline dot beside them - three
+ * answers to one question, and the setting only worked where it happened to
+ * be asked properly.
+ */
+describe('appearing offline, everywhere', () => {
+  const invisible = () => {
+    const p = new Presences()
+    p.replaceHere(['seen', 'hidden'])
+    p.remember({ id: 'seen', presence: 'online' })
+    p.remember({ id: 'hidden', presence: 'offline' })
+    return p
+  }
+
+  it('is what anything on screen asks', () => {
+    const p = invisible()
+    expect(p.appearsHere('seen')).toBe(true)
+    expect(p.appearsHere('hidden'), 'they would be in the Online group').toBe(false)
+  })
+
+  /* And the socket is still there, which is the other half: the question
+     "are they connected" still has its own honest answer for anything that
+     genuinely needs it. */
+  it('while the connection is still known to be open', () => {
+    expect(invisible().isHere('hidden')).toBe(true)
+  })
+
+  /* Somebody who is away or busy is still here - only offline hides. */
+  it('and away and busy are still here', () => {
+    const p = new Presences()
+    p.replaceHere(['a', 'b'])
+    p.remember({ id: 'a', presence: 'idle' })
+    p.remember({ id: 'b', presence: 'dnd' })
+    expect(p.appearsHere('a')).toBe(true)
+    expect(p.appearsHere('b')).toBe(true)
+  })
+})

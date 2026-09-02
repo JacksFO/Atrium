@@ -3011,7 +3011,7 @@ function Channels({
   const roster = space ? world.membersBySpace.get(space.id) : undefined
   const total = roster?.size ?? 0
   let online = 0
-  if (roster) for (const id of roster) if (world.presence.isHere(id)) online++
+  if (roster) for (const id of roster) if (world.presence.appearsHere(id)) online++
 
   /* What is waiting where this list is looking. How much of it is no longer
      asked: the button that clears it does not say a number. */
@@ -5141,7 +5141,7 @@ function Members({ server, world, space, chat, onOpen, grip, onWho }: {
                        sentence somebody typed about themselves. */
                     : world.voice.has(u.id)
                     ? <InVoiceLine />
-                    : (statusOf(u) && world.presence.isHere(u.id)
+                    : (statusOf(u) && world.presence.appearsHere(u.id)
                       ? statusOf(u)
                       : world.presence.statusFor(u.id) === 'offline' ? 'offline' : 'online')}
                 </span>
@@ -5166,8 +5166,11 @@ function Members({ server, world, space, chat, onOpen, grip, onWho }: {
    */
   const roster = world.membersBySpace.get(space.id)
   const mine = [...world.people.values()].filter((u) => roster?.has(u.id))
-  const here = mine.filter((u) => world.presence.isHere(u.id))
-  const away = mine.filter((u) => !world.presence.isHere(u.id))
+  /* How they appear, not whether a socket is open: somebody who has chosen
+     to appear offline belongs in the second list, and this is the most
+     visible place in the app that could have said otherwise. */
+  const here = mine.filter((u) => world.presence.appearsHere(u.id))
+  const away = mine.filter((u) => !world.presence.appearsHere(u.id))
   const groups = memberGroups(here, space, world.roles, world.assignments)
 
   const row = (u: (typeof here)[number]) => (

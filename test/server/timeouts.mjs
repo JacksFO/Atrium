@@ -49,6 +49,7 @@ const gateway = (token) => new Promise((resolve, reject) => {
     say: (channelId, body) => ws.send(JSON.stringify({
       t: 'send', channelId, body, nonce: 'to-' + Math.random().toString(36).slice(2),
     })),
+    react: (messageId, emoji) => ws.send(JSON.stringify({ t: 'react', messageId, emoji })),
     errors: () => errors,
     landed: () => sent,
     channels: () => ready?.channels ?? [],
@@ -95,6 +96,9 @@ const run = async () => {
   }, owner.token)
   check('a moderator can time somebody out', set.status === 200, set.body)
 
+  /* Kept before the record is cleared: it is the only message that exists
+     at this point, and it is what the reaction below is aimed at. */
+  const alreadySaid = asLoud.landed()[0]
   asLoud.forget()
   asLoud.say(channel.id, 'during the timeout')
   await wait(1200)
@@ -102,6 +106,26 @@ const run = async () => {
   const told = asLoud.errors()[0]
   console.log('      told:    ' + JSON.stringify(told?.detail))
   check('and are told why', /minute/.test(String(told?.detail ?? '')), told?.detail)
+
+  /*
+   * And not by reacting either.
+   *
+   * A reaction is a way of talking, and during the argument a timeout is for,
+   * a row of clown faces is exactly what it was meant to stop. Silent rather
+   * than refused, because a reaction has no acknowledgement: the client draws
+   * nothing until the server says it happened.
+   */
+  const target = alreadySaid
+  if (target && target.id) {
+    asLoud.react(target.id, String.fromCodePoint(0x1F921))
+    await wait(1300)
+    const after = (await call('/api/channels/' + channel.id + '/messages', {}, owner.token)).body
+    const one = (after && after.messages ? after.messages : []).find((m) => m.id === target.id)
+    const reactions = (one && one.reactions) || []
+    check('and they cannot react either', reactions.length === 0, reactions)
+  } else {
+    check('there was a message to try reacting to', false, target)
+  }
 
   /* The whole point of it being the middle option. */
   const members = (await call(`/api/spaces/${space.id}/members`, {}, owner.token)).body
