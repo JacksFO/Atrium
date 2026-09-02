@@ -25,6 +25,8 @@ export type MemberModeration = {
   mayKick: boolean
   /** ban_members: they cannot, until somebody lifts it. */
   mayBan: boolean
+  /** moderate_members: stopped from talking, staying where they are. */
+  mayTimeOut: boolean
 }
 
 /**
@@ -64,7 +66,8 @@ export function memberModerationFor(
   const held = world.held.in(space.id, null)
   const mayKick = held.includes('kick_members')
   const mayBan = held.includes('ban_members')
-  if (!mayKick && !mayBan) return null
+  const mayTimeOut = held.includes('moderate_members')
+  if (!mayKick && !mayBan && !mayTimeOut) return null
 
-  return { spaceId: space.id, mayKick, mayBan }
+  return { spaceId: space.id, mayKick, mayBan, mayTimeOut }
 }

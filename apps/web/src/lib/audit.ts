@@ -43,6 +43,8 @@ const SAID: Record<string, string> = {
   'invite.send': 'sent an invite',
   'member.ban': 'banned somebody',
   'member.remove': 'removed somebody',
+  'member.timeout': 'timed somebody out',
+  'member.timeout.lift': 'let somebody talk again',
   'member.unban': 'lifted a ban',
   'message.delete': 'deleted a message',
   'role.create': 'made a role',

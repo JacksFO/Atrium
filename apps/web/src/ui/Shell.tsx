@@ -250,6 +250,22 @@ export function homeTooltip(world: World): string {
  * asked. The same ladder every app with this offers, so the numbers are
  * already familiar.
  */
+/**
+ * How long to stop somebody talking for.
+ *
+ * Round numbers, and short ones first: the commonest reason to reach for this
+ * is a conversation getting heated, which wants minutes rather than days. A
+ * week is the outside because a timeout nobody remembers setting is a ban
+ * that nobody decided to make.
+ */
+const TIMEOUTS: ReadonlyArray<readonly [number, string]> = [
+  [5, 'For 5 minutes'],
+  [10, 'For 10 minutes'],
+  [60, 'For an hour'],
+  [24 * 60, 'For a day'],
+  [7 * 24 * 60, 'For a week'],
+]
+
 const SLOWMODES: ReadonlyArray<readonly [number, string]> = [
   [0, 'Off'],
   [5, '5 seconds'],
@@ -740,6 +756,23 @@ export function Shell({
     const mod2 = memberModerationFor(world, space, id)
     if (mod2) {
       items.push({ kind: 'rule' })
+      /*
+       * Timing out first, because it is the smallest of the three and the one
+       * that should be reached for before the others. Ordered the other way
+       * round, the biggest tool is the nearest to hand.
+       *
+       * A submenu of lengths rather than a dialog: the decision is how long,
+       * there are five answers worth offering, and none of them needs
+       * explaining the way barring somebody does.
+       */
+      if (mod2.mayTimeOut) {
+        items.push({
+          kind: 'item', label: 'Time out…', icon: 'clock',
+          onPick: () => setTimingOut({
+            id, spaceId: mod2.spaceId, name: nameIn(world, space!.id, person),
+          }),
+        })
+      }
       if (mod2.mayKick) {
         items.push({
           kind: 'item', label: `Remove from ${space!.name}`, icon: 'out', danger: true,
@@ -889,6 +922,31 @@ export function Shell({
       /* Refused or offline. Nothing was changed here to put back. */
     }
   }
+  /**
+   * Stop somebody talking for a while, and put the roster right afterwards.
+   *
+   * Read back rather than adjusted here, the same as removing and barring:
+   * what happened is the server's answer.
+   */
+  const timeOutMember = async (userId: Id, spaceId: Id, minutes: number) => {
+    const where = `spaceId=${encodeURIComponent(spaceId)}`
+    try {
+      await server.post(
+        `/api/admin/members/${encodeURIComponent(userId)}/timeout?${where}`,
+        { minutes },
+      )
+      world.loaded.delete(spaceId)
+      await loadSpace(server, world, spaceId).catch(() => {})
+      changed()
+    } catch {
+      /* Refused or offline. Nothing was changed here to put back. */
+    }
+  }
+  /* Somebody about to be stopped from talking, and for how long. */
+  const [timingOut, setTimingOut] = useState<
+    { id: Id; spaceId: Id; name: string } | null
+  >(null)
+  const [timeoutMins, setTimeoutMins] = useState(10)
   /* Somebody about to be barred, held until it is confirmed. */
   const [banning, setBanning] = useState<
     { id: Id; spaceId: Id; name: string; where: string } | null
@@ -2451,6 +2509,38 @@ export function Shell({
                 || (naming.kind === 'rename' && naming.what === 'categories')
                 ? 'A heading keeps the case you type — it is only ever read.'
                 : 'A channel name is an address, so it is lowercased and hyphenated.'}
+          </p>
+        </Modal>
+      )}
+
+      {timingOut && (
+        <Modal
+          title={`Time out ${timingOut.name}?`}
+          onClose={() => setTimingOut(null)}
+          actions={
+            <>
+              <button className="btn" onClick={() => setTimingOut(null)}>Cancel</button>
+              <button className="btn danger" onClick={() => {
+                void timeOutMember(timingOut.id, timingOut.spaceId, timeoutMins)
+                setTimingOut(null)
+              }}>Time out</button>
+            </>
+          }
+        >
+          <div className="fld">
+            <label>For how long</label>
+            <select className="lab" value={timeoutMins}
+              onChange={(e) => setTimeoutMins(Number(e.target.value))}>
+              {TIMEOUTS.map(([minutes, said]) => (
+                <option key={minutes} value={minutes}>{said}</option>
+              ))}
+            </select>
+          </div>
+          {/* What it does and what it does not, because the whole reason this
+              exists is that it is smaller than the other two. */}
+          <p className="hint">
+            They stay in the server and keep everything they have. They cannot
+            send messages until it ends, and it can be lifted early.
           </p>
         </Modal>
       )}

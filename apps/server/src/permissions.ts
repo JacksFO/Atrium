@@ -45,6 +45,19 @@ export const PERMISSIONS = [
    * granting the stronger one to get at the weaker.
    */
   'ban_members',
+  /*
+   * Stopping somebody talking for a while, without showing them out.
+   *
+   * The middle option, and the one moderators actually reach for. A kick ends
+   * the moment they click the invite again and a ban does not end at all;
+   * neither of those is "stop, for ten minutes", and having only those two
+   * means every small argument is answered with the largest tool there is.
+   *
+   * Its own permission for the same reason ban_members is: trusting somebody
+   * to cool a room down is not trusting them to decide who never comes back.
+   * It is the weakest of the three and implies neither of the others.
+   */
+  'moderate_members',
   // Voice
   'move_members',
   /*

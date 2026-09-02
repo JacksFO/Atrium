@@ -79,6 +79,10 @@ export const ICONS = {
   cam: [{"t": "rect", "x": "2", "y": "6", "width": "13", "height": "12", "rx": "3"}, {"t": "path", "d": "M15 11l7-4v10l-7-4z"}],
   camoff: [{"t": "path", "d": "M4 4l16 16"}, {"t": "rect", "x": "2", "y": "6", "width": "13", "height": "12", "rx": "3"}, {"t": "path", "d": "M15 11l7-4v10"}],
   expand: [{"t": "path", "d": "M4 9V4h5M20 15v5h-5M4 15v5h5M20 9V4h-5"}],
+  /* A clock, for a thing with an end to it. Nothing here was about time -
+     belloff is about notifications and micoff is about voice, and a timeout
+     is neither. */
+  clock: [{"t": "circle", "cx": "12", "cy": "12", "r": "9"}, {"t": "path", "d": "M12 7v5l3.5 2"}],
   game: [{"t": "rect", "x": "2", "y": "7", "width": "20", "height": "11", "rx": "4"}, {"t": "path", "d": "M7 11v3M5.5 12.5h3"}, {"t": "circle", "cx": "16", "cy": "12", "r": "1"}, {"t": "circle", "cx": "18.5", "cy": "14.5", "r": "1"}],
   belloff: [{"t": "path", "d": "M4 4l16 16"}, {"t": "path", "d": "M8 8v2c0 5-2 6-2 6h11"}, {"t": "path", "d": "M10 20a2 2 0 004 0"}],
   img: [{"t": "rect", "x": "3", "y": "5", "width": "18", "height": "14", "rx": "2"}, {"t": "circle", "cx": "9", "cy": "10", "r": "1.6"}, {"t": "path", "d": "M4 17l5-4 4 3 3-2 4 3"}],

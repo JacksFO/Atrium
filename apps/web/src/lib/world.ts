@@ -163,6 +163,15 @@ export type World = {
    * can see, so it is applied here and nowhere else.
    */
   blocked: Set<Id>
+  /**
+   * Who is stopped from talking, and until when.
+   *
+   * Keyed by server and person, because a timeout belongs to one server: the
+   * same account can be timed out in one and talking freely in another. The
+   * value is a moment, so whether it is over is a comparison against the
+   * clock rather than something that has to be swept.
+   */
+  timeouts: Map<string, number>
 }
 
 export function emptyWorld(me: User): World {
@@ -183,7 +192,8 @@ export function emptyWorld(me: User): World {
     membersBySpace: new Map(),
     nicknames: new Map(),
     looseOrder: {},
-    dms: [], friends: [], blocked: new Set(), lastAt: new Map(), activities: new Map(),
+    dms: [], friends: [], blocked: new Set(), timeouts: new Map(),
+    lastAt: new Map(), activities: new Map(),
     loaded: new Set(), watchers: new Map(), voice: new Map(),
   }
 }
@@ -307,6 +317,23 @@ export function apply(w: World, e: ServerEvent): Effect {
     case 'ready':
       applyReady(w, e)
       return NOTHING
+
+    /*
+     * Somebody stopped from talking here, or let talk again.
+     *
+     * Kept so the member list can say so - the person it is about finds out
+     * when they try to speak, and without this nobody else would find out at
+     * all. Zero means it was lifted, and the row goes rather than sitting
+     * there as a timeout that has already ended.
+     */
+    case 'member-timeout': {
+      const key = `${e.spaceId}:${e.userId}`
+      if (e.until > Date.now()) w.timeouts.set(key, e.until)
+      else w.timeouts.delete(key)
+      /* Nothing to fetch: the frame carries everything this changes, and the
+         counter the caller bumps is what tells the page to redraw. */
+      return NOTHING
+    }
 
     /* Who has a socket open. A boolean, and never a word — reading it as a
        word is what left every dot in the app grey. */

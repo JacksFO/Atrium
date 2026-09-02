@@ -411,6 +411,30 @@ CREATE TABLE IF NOT EXISTS bans (
 CREATE INDEX IF NOT EXISTS idx_bans_user ON bans(user_id);
 
 /*
+ * Somebody stopped from talking for a while.
+ *
+ * The middle option, and the one moderators actually reach for: a kick ends
+ * the moment they click the invite again and a ban does not end at all, and
+ * neither of those is "stop, for ten minutes". It is a row rather than a
+ * column on the membership because it has an end and an author, and because
+ * a lapsed one is worth keeping until something clears it - "were they timed
+ * out last week" is a question the audit log alone answers badly.
+ *
+ * The end is a moment rather than a length, so nothing has to run for it to
+ * end: the comparison is against the clock every time it is asked.
+ */
+CREATE TABLE IF NOT EXISTS timeouts (
+  space_id   TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  until      INTEGER NOT NULL,
+  reason     TEXT NOT NULL DEFAULT '',
+  created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (space_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_timeouts_user ON timeouts(user_id);
+
+/*
  * People you do not want to hear from.
  *
  * The app was careful about strangers and had nothing at all for the case
@@ -3081,6 +3105,47 @@ export function isBanned(userId: string, spaceId: string): boolean {
  * REPLACE rather than IGNORE so banning somebody already banned updates the
  * reason and the name against it instead of silently doing nothing.
  */
+/**
+ * When somebody's timeout ends, or 0 if they are not in one.
+ *
+ * Asked against the clock rather than swept, so a timeout that has run out
+ * needs nothing to have happened for it to be over. The row is left where it
+ * is - it costs nothing, and it is the only record of what was done.
+ */
+export function timedOutUntil(spaceId: string, userId: string): number {
+  const row = db.prepare(
+    'SELECT until FROM timeouts WHERE space_id = ? AND user_id = ?'
+  ).get(spaceId, userId) as { until?: number } | undefined
+  const until = row?.until ?? 0
+  return until > Date.now() ? until : 0
+}
+
+/** Stop somebody talking here until a moment. */
+export function timeOutIn(
+  spaceId: string, userId: string, until: number, by: string, reason: string,
+): void {
+  db.prepare(
+    `INSERT OR REPLACE INTO timeouts (space_id, user_id, until, reason, created_by, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(spaceId, userId, until, reason.slice(0, 500), by, Date.now())
+}
+
+/** Let them talk again. Returns whether there was anything to lift. */
+export function liftTimeout(spaceId: string, userId: string): boolean {
+  const row = db.prepare(
+    'DELETE FROM timeouts WHERE space_id = ? AND user_id = ? RETURNING user_id'
+  ).get(spaceId, userId)
+  return !!row
+}
+
+/** Everybody currently stopped from talking in a server. */
+export function timeoutsOf(spaceId: string): Array<{ user_id: string; until: number; reason: string }> {
+  return db.prepare(
+    `SELECT user_id, until, reason FROM timeouts
+      WHERE space_id = ? AND until > ? ORDER BY until DESC`
+  ).all(spaceId, Date.now()) as Array<{ user_id: string; until: number; reason: string }>
+}
+
 export function banFromSpace(
   spaceId: string, userId: string, by: string, reason: string,
 ): void {

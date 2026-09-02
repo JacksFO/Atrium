@@ -8,6 +8,7 @@ import { readToken, findUser } from './auth.js'
 import { db, rememberVoiceModeration, withReadCache, joinContainer, makeContainer, setConversationClosed, channelsForClient, conversationBetween, membersOfContainer, blockedBetween, blockedBy, hydrateOne, hydrateShared, forViewer, dmMembers, isDirect, startingMembers, canSeeMember, visibleWith, channelPrefsFor, channelFor, membersOfSpace, isSpaceMember, uploadClaim, ACTIVE_USERS, PUBLIC_USER_COLUMNS, type User, ROLE_ORDER_R } from './db.js'
 import { permissionsFor, permissionsIn, writeAudit, outranks, type Permission } from './permissions.js'
 import { mayIgnoreSlowmode, slowmodeMessage, waitLeft } from './slowmode.js'
+import { timedOutUntil } from './db.js'
 import {
   canAccessChannel, accessibleChannelIds, canBeInVoice, channelPermissionsFor, setVoicePlacement,
 } from './access.js'
@@ -1951,6 +1952,29 @@ export function attachGateway(server: Server): void {
           }
           if (!may(client.user, 'send_messages', channelId)) {
             return refuse('You cannot send messages here.')
+          }
+          /*
+           * Stopped from talking here, for a while.
+           *
+           * Before slow mode, because being timed out is a decision somebody
+           * made about this person and slow mode is a property of the room -
+           * told the wrong one first, somebody serving a timeout is told to
+           * wait five seconds and tries again.
+           *
+           * Asked against the clock, so a timeout that has run out needs
+           * nothing to have happened for it to be over.
+           */
+          if (!isDirect(channelId)) {
+            const inSpace = spaceOfChannel(channelId)
+            if (inSpace) {
+              const until = timedOutUntil(inSpace, client.user.id)
+              if (until > 0) {
+                const mins = Math.ceil((until - Date.now()) / 60000)
+                return refuse(
+                  `You cannot send messages in this server for another ${mins} minute${mins === 1 ? '' : 's'}.`
+                )
+              }
+            }
           }
           /*
            * Slow mode, where the channel is in it.

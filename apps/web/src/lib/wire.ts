@@ -487,6 +487,15 @@ export type ServerEvent =
      channel muted on one machine is muted on the others. */
   | { t: 'prefs-changed'; pref: ChannelPref }
   | { t: 'member-roles' }
+  /**
+   * Somebody stopped from talking here, or let talk again.
+   *
+   * `until` is a moment, and 0 means it was lifted. Carried rather than
+   * fetched because the member list draws it, and because the person it is
+   * about should find out when it happens rather than the next time they
+   * try to say something.
+   */
+  | { t: 'member-timeout'; userId: Id; spaceId: Id; until: number }
   /* Carries the whole answer for one server, and the channels in it where
      that answer does not hold. Declared as an empty event, all of it was
      dropped on arrival and what somebody could do only changed when they

@@ -43,6 +43,7 @@ export type PermissionId =
   | 'create_invite'
   | 'kick_members'
   | 'ban_members'
+  | 'moderate_members'
   | 'move_members'
   | 'mute_members'
   | 'view_audit_log'
@@ -76,6 +77,8 @@ export const PERMISSIONS: readonly PermissionMeta[] = [
   { id: 'kick_members', label: 'Remove members', detail: 'Show somebody the door' },
   { id: 'ban_members', label: 'Ban members',
     detail: 'Bar somebody from coming back. Removing them alone does not' },
+  { id: 'moderate_members', label: 'Time members out',
+    detail: 'Stop somebody talking for a while. They stay in the server' },
   { id: 'move_members', label: 'Move people in voice', detail: 'Carry somebody into another room, or out' },
   { id: 'mute_members', label: 'Silence people in voice',
     detail: 'Mute or deafen somebody in a call. Separate from tidying a channel' },
@@ -87,7 +90,8 @@ export const PERMISSION_GROUPS: ReadonlyArray<readonly [string, readonly Permiss
   ['The room', ['view_channels', 'read_history', 'manage_channels']],
   ['What is said', ['send_messages', 'attach_files', 'add_reactions', 'mention_everyone',
     'create_polls', 'manage_messages', 'manage_pins']],
-  ['Who is here', ['create_invite', 'kick_members', 'ban_members', 'manage_nicknames', 'move_members',
+  ['Who is here', ['create_invite', 'kick_members', 'ban_members', 'moderate_members',
+    'manage_nicknames', 'move_members',
     'mute_members', 'manage_roles', 'manage_space', 'view_audit_log']],
   /*
    * On its own, because it is not one of a set - it is the set.

@@ -4,7 +4,7 @@ import { randomUUID, randomBytes } from 'node:crypto'
 import { statSync, readdirSync, unlinkSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { accessFor, canAccessChannel, channelPermissionsFor, channelsWithViewRules, refreshPrivacy, refreshPrivacyUnder, setAccess, setViewOverride } from '../access.js'
-import { db, withReadCache, joinContainer, makeContainer, leaveContainer, membersOfContainer, conversationBetween, ACTIVE_USERS, PUBLIC_USER_COLUMNS, areFriends, banFromSpace, bansOf, blockedBetween, canSeeMember, channelFor, forgetOverrides, forgetSubjectOverrides, forgetMemberIn, isBanned, isSpaceMember, liftBan, setNicknameIn, ownsSpace, rememberUpload, ROLE_ORDER } from '../db.js'
+import { db, withReadCache, joinContainer, makeContainer, leaveContainer, membersOfContainer, conversationBetween, ACTIVE_USERS, PUBLIC_USER_COLUMNS, areFriends, banFromSpace, bansOf, timeOutIn, liftTimeout, timeoutsOf, blockedBetween, canSeeMember, channelFor, forgetOverrides, forgetSubjectOverrides, forgetMemberIn, isBanned, isSpaceMember, liftBan, setNicknameIn, ownsSpace, rememberUpload, ROLE_ORDER } from '../db.js'
 import { config } from '../config.js'
 import { reconcileUploads } from '../uploads.js'
 import { isProviderUrl } from '../gifs.js'
@@ -1564,9 +1564,10 @@ export function registerAdminRoutes(app: FastifyInstance, authed: Authed): void 
    * the two disagree about, and it belongs to the caller.
    */
   function refuseActingOn(
-    actorId: string, id: string, target_space: string, verb: 'remove' | 'ban',
+    actorId: string, id: string, target_space: string,
+    verb: 'remove' | 'ban' | 'time out',
   ): { code: number; error: string } | null {
-    const past = verb === 'ban' ? 'banned' : 'removed'
+    const past = verb === 'ban' ? 'banned' : verb === 'remove' ? 'removed' : 'timed out'
     if (id === actorId) return { code: 400, error: `you cannot ${verb} yourself` }
     const target = db.prepare('SELECT username FROM users WHERE id = ?').get(id) as
       unknown as { username: string } | undefined
@@ -1643,6 +1644,97 @@ export function registerAdminRoutes(app: FastifyInstance, authed: Authed): void 
    * decision gets made afterwards. So membership is not required, and the
    * removal is simply skipped when there is nothing to remove.
    */
+  /**
+   * Stop somebody talking here for a while.
+   *
+   * The middle option between a kick and a ban, and the one moderators
+   * actually reach for: a kick ends the moment they click the invite again
+   * and a ban does not end at all, so having only those two means every small
+   * argument is answered with the largest tool there is.
+   *
+   * They stay in the server and keep everything they had. What they cannot do
+   * is say anything, and the check for that is in the gateway where messages
+   * arrive - the ban routes take somebody out, and this deliberately does not.
+   */
+  app.post('/api/admin/members/:id/timeout', async (req, reply) => {
+    const target_space = needSpace(req, reply)
+    if (!target_space) return
+    const user = await guard(req, reply, 'moderate_members', target_space)
+    if (!user) return
+    if (!isSpaceMember(user.id, target_space)) {
+      return reply.code(403).send({ error: 'you are not in that server' })
+    }
+
+    const { id } = req.params as { id: string }
+    const { minutes, reason } = (req.body ?? {}) as { minutes?: unknown; reason?: string }
+    if (reason !== undefined && typeof reason !== 'string') {
+      return reply.code(400).send({ error: 'reason must be text' })
+    }
+
+    /*
+     * A week at the outside, the way every app with this caps it.
+     *
+     * Not because a longer one would break anything - because a timeout that
+     * outlives anybody's memory of setting it is a ban that nobody decided
+     * to make, and a ban is the thing with a lifting for exactly that reason.
+     */
+    const asked = Math.floor(Number(minutes))
+    if (!Number.isFinite(asked) || asked <= 0) {
+      return reply.code(400).send({ error: 'how many minutes?' })
+    }
+    const mins = Math.min(asked, 7 * 24 * 60)
+
+    const refuse = refuseActingOn(user.id, id, target_space, 'time out')
+    if (refuse) return reply.code(refuse.code).send({ error: refuse.error })
+
+    if (!isSpaceMember(id, target_space)) {
+      return reply.code(404).send({ error: 'they are not in that server' })
+    }
+    if (!allow(`timeout:${user.id}`, 30, 60_000)) {
+      return reply.code(429).send({ error: 'slow down a moment' })
+    }
+
+    const until = Date.now() + mins * 60_000
+    timeOutIn(target_space, id, until, user.id, (reason ?? '').trim())
+    writeAudit(user.id, 'member.timeout', `${nameOf(id)} for ${mins}m`, target_space)
+    /* Everybody who can see them, because a timeout shows on the member list
+       and a moderator wants to see that it took. */
+    pushAboutMember(id, { t: 'member-timeout', userId: id, spaceId: target_space, until })
+    return { until }
+  })
+
+  /** Let them talk again, before it runs out on its own. */
+  app.delete('/api/admin/members/:id/timeout', async (req, reply) => {
+    const target_space = needSpace(req, reply)
+    if (!target_space) return
+    const user = await guard(req, reply, 'moderate_members', target_space)
+    if (!user) return
+
+    const { id } = req.params as { id: string }
+    /*
+     * No ranking check on lifting one.
+     *
+     * Giving somebody their voice back is not an act against them, so the
+     * question "do you outrank them" does not arise - and a moderator who can
+     * set one but not lift it is a worse arrangement than either.
+     */
+    if (!liftTimeout(target_space, id)) {
+      return reply.code(404).send({ error: 'they are not timed out' })
+    }
+    writeAudit(user.id, 'member.timeout.lift', nameOf(id), target_space)
+    pushAboutMember(id, { t: 'member-timeout', userId: id, spaceId: target_space, until: 0 })
+    return { ok: true }
+  })
+
+  /** Who is currently stopped from talking, for the moderation screen. */
+  app.get('/api/admin/timeouts', async (req, reply) => {
+    const target_space = needSpace(req, reply)
+    if (!target_space) return
+    const user = await guard(req, reply, 'moderate_members', target_space)
+    if (!user) return
+    return { timeouts: timeoutsOf(target_space) }
+  })
+
   app.post('/api/admin/members/:id/ban', async (req, reply) => {
     const target_space = needSpace(req, reply)
     if (!target_space) return
