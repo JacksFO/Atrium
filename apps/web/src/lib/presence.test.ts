@@ -80,3 +80,50 @@ describe('who is here', () => {
     expect(all.get('b')).toBe('busy')
   })
 })
+
+/**
+ * How somebody chooses to appear.
+ *
+ * Every part of this was already here - the column on the account, the four
+ * words the server accepts, the mapping into the ones on screen, and a store
+ * that reads a chosen presence off any row it is given. What was missing was
+ * anywhere to choose one, so everybody was permanently "online" and Do Not
+ * Disturb existed only as a value nothing ever set.
+ */
+describe('choosing how you appear', () => {
+  it('is remembered from the row, whatever it says', () => {
+    const p = new Presences()
+    p.replaceHere(['u1'])
+    p.remember({ id: 'u1', presence: 'dnd' })
+    expect(p.statusFor('u1')).toBe('busy')
+  })
+
+  it('and away is away', () => {
+    const p = new Presences()
+    p.replaceHere(['u1'])
+    p.remember({ id: 'u1', presence: 'idle' })
+    expect(p.statusFor('u1')).toBe('away')
+  })
+
+  /*
+   * Appearing offline is a choice, not a claim about the app.
+   *
+   * Somebody who has chosen it has a socket open like anybody else - they are
+   * in `here` - so the only thing that makes them look gone is the value they
+   * picked being read.
+   */
+  it('and appearing offline works while the app is plainly running', () => {
+    const p = new Presences()
+    p.replaceHere(['u1'])
+    p.remember({ id: 'u1', presence: 'offline' })
+    expect(p.isHere('u1'), 'they are connected either way').toBe(true)
+    expect(p.statusFor('u1'), 'the choice was not read').toBe('offline')
+  })
+
+  /* And somebody who has closed the app is offline whatever they chose. */
+  it('but choosing online does not keep somebody here', () => {
+    const p = new Presences()
+    p.remember({ id: 'u1', presence: 'online' })
+    expect(p.statusFor('u1')).toBe('offline')
+  })
+})

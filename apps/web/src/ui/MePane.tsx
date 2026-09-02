@@ -250,6 +250,37 @@ export function MePane({ server, me, onSaved }: {
             onBlur={() => name !== me.display_name && save({ display_name: name })} />
         </div>
 
+        {/*
+          * How you appear, which is a different thing from what you are up to.
+          *
+          * The column, the four words the server accepts and the mapping into
+          * the ones on screen have all been here since before this - what was
+          * missing was anywhere to choose one, so everybody was permanently
+          * "online" and Do Not Disturb existed only as a value nothing set.
+          *
+          * Offline is the one worth a sentence: it is how you appear rather
+          * than a claim about whether the app is running, and saying so is the
+          * difference between a setting somebody trusts and one they test by
+          * asking a friend.
+          */}
+        <div className="fld">
+          <label>How you appear</label>
+          <select className="lab" value={me.presence ?? 'online'} aria-label="How you appear"
+            onChange={(e) => save({ presence: e.target.value })}>
+            <option value="online">Online</option>
+            <option value="idle">Away</option>
+            <option value="dnd">Do not disturb</option>
+            <option value="offline">Appear offline</option>
+          </select>
+          <p className="hint">
+            {(me.presence ?? 'online') === 'dnd'
+              ? 'Nothing will make a sound while this is set.'
+              : (me.presence ?? 'online') === 'offline'
+                ? 'You will look offline to everybody else. Everything still works.'
+                : 'The dot beside your name, for everybody who can see you.'}
+          </p>
+        </div>
+
         <div className="fld">
           <label>Status</label>
           <input value={status} aria-label="What you are up to"

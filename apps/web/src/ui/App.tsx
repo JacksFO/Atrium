@@ -61,7 +61,10 @@ export function App() {
   /* One switch for every tone the app has. Told the sound module rather than
      checked at each call site: there are a dozen of those and one of them
      would eventually forget to ask. */
-  useEffect(() => { setSoundEnabled(settings.sounds) }, [settings.sounds])
+  /* Whether anything is heard is decided once, further down, where both
+     halves of the answer are known - the setting and whether Do Not Disturb
+     is on. Two components writing the same switch is two answers to one
+     question, and which one lands would depend on the order they render. */
 
   const signIn = useCallback((t: string) => {
     writeToken(t)
@@ -142,6 +145,18 @@ function Signed({ server, token, onOut, settings, set, reset }: {
     world, gateway, ready, conn, tries, retry, error, clearError, send, version, changed,
   } = useWorld(server, token)
   const stale = useStale(server)
+
+  /*
+   * Do Not Disturb silences the app, which is the whole reason anybody sets
+   * it. The setting in Settings is still the master - somebody who has turned
+   * sounds off does not get them back by being available - so this can only
+   * ever take them away.
+   *
+   * Only the sounds. What is on screen is unchanged: Do Not Disturb is about
+   * not being interrupted, not about being kept in the dark.
+   */
+  const quiet = world?.me.presence === 'dnd'
+  useEffect(() => { setSoundEnabled(settings.sounds && !quiet) }, [settings.sounds, quiet])
 
   /*
    * The connection coming back, said out loud.
