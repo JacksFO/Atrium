@@ -34,12 +34,32 @@ const src = readFileSync(resolve(process.cwd(), 'src/ui/Shell.tsx'), 'utf8')
   .split(String.fromCharCode(13) + String.fromCharCode(10))
   .join(String.fromCharCode(10))
 
-/** Each `useMemo(...)` call in Shell, as its text up to the closing paren. */
+/**
+ * Each `useMemo(...)` call in Shell, as its whole text.
+ *
+ * Counted by balancing the brackets rather than by looking for the first
+ * closing paren at the end of a line. A memo whose body contains one - and
+ * any memo with a `.map(...)` on a line of its own does - was cut off before
+ * its dependency array, so the check below was reading the wrong text
+ * entirely: it happened to fail loudly here, and the other way round is a
+ * memo that passes because the fragment it was handed mentioned `version`
+ * somewhere in the body.
+ */
 function memos(): string[] {
   const out: string[] = []
   let at = src.indexOf('useMemo(')
   while (at >= 0) {
-    out.push(src.slice(at, src.indexOf(')' + NEWLINE, at) + 1))
+    let depth = 0
+    let end = at
+    for (let i = src.indexOf('(', at); i < src.length; i++) {
+      const ch = src[i]
+      if (ch === '(') depth++
+      else if (ch === ')') {
+        depth--
+        if (depth === 0) { end = i; break }
+      }
+    }
+    out.push(src.slice(at, end + 1))
     at = src.indexOf('useMemo(', at + 1)
   }
   return out

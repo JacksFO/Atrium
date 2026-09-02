@@ -12,6 +12,9 @@ import { canCopyPictures, copyPicture } from '../lib/copyPicture'
 import { NewSince } from './NewSince'
 import { JumpDown } from './JumpDown'
 import { badgeLabel } from '../lib/shell'
+import { Switcher } from './Switcher'
+import { Shortcuts } from './Shortcuts'
+import { moved as wrapped, targetsOf, type Target } from '../lib/switcher'
 import { toast } from '../lib/toast'
 import { memberModerationFor } from '../lib/memberModeration'
 import type { Api } from '../lib/api'
@@ -523,6 +526,18 @@ export function Shell({
      conversation because a search result can be in a different channel, and
      following one has to be able to change which conversation is open. */
   const [panel, setPanel] = useState<'pins' | 'search' | null>(null)
+  /* The two things the keyboard can put on screen from anywhere. */
+  const [switching, setSwitching] = useState(false)
+  const [showingKeys, setShowingKeys] = useState(false)
+  /*
+   * Where you have been, newest first.
+   *
+   * The switcher opens on this rather than on everything there is, because
+   * the commonest reason to open one is going back to the thing you were just
+   * looking at. Kept here rather than on the world: it is this session's
+   * path through the app, and it should not outlive the tab.
+   */
+  const visited = useRef<Id[]>([])
   /*
    * Which of the three pages outside a server is showing.
    *
@@ -1137,6 +1152,97 @@ export function Shell({
   const space = where.kind === 'space'
     ? world.spaces.find((s) => s.id === where.id) ?? null
     : null
+
+  /*
+   * Everywhere the keyboard can get to.
+   *
+   * Built from what this client already holds, which is exactly what this
+   * account may see - the gateway only ever sent the channels it is allowed
+   * to know about, so there is nothing to filter here and nothing that could
+   * leak by forgetting to.
+   */
+  const targets = useMemo(() => targetsOf(world), [world, version])
+
+  /** Go wherever the switcher was pointed, switching server if need be. */
+  const goToTarget = useCallback((t: Target) => {
+    if (t.kind === 'space') { setWhere({ kind: 'space', id: t.id }); return }
+    if (t.kind === 'dm' || t.kind === 'group') {
+      setWhere({ kind: 'dms' })
+      openToRead(t.id)
+      return
+    }
+    /* A channel carries its server, and arriving in the channel without
+       arriving in the server leaves the rail pointing somewhere else. */
+    if (t.spaceId) setWhere({ kind: 'space', id: t.spaceId })
+    openToRead(t.id)
+  }, [openToRead])
+
+  /* Remembered as it happens, so the switcher can open on where you were. */
+  useEffect(() => {
+    if (!channelId) return
+    const seen = visited.current.filter((id) => id !== channelId)
+    seen.unshift(channelId)
+    visited.current = seen.slice(0, 20)
+  }, [channelId])
+
+  /*
+   * The keys that work from anywhere.
+   *
+   * On the window rather than on a element, because "from anywhere" is the
+   * whole point - and refused while somebody is typing into something, since
+   * Ctrl+1 in a message box is a person writing rather than a person
+   * navigating. The composer's own keys are handled where the composer is.
+   */
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey
+      const target = e.target as HTMLElement | null
+      const typing = !!target && (
+        target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable
+      )
+
+      /* Ctrl+K works while typing as well: somebody who has started writing
+         and then decides to go elsewhere should not have to clear the box
+         first. The rest wait until the keyboard is not being used for words. */
+      if (mod && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setSwitching((now) => !now)
+        return
+      }
+      if (mod && e.key === '/') {
+        e.preventDefault()
+        setShowingKeys((now) => !now)
+        return
+      }
+      if (typing) return
+
+      if (mod && e.key.toLowerCase() === 'f') {
+        e.preventDefault()
+        setPanel((now) => (now === 'search' ? null : 'search'))
+        return
+      }
+      /* A server by number, in the order they are on screen. */
+      if (mod && /^[1-9]$/.test(e.key)) {
+        const sp = world.spaces[Number(e.key) - 1]
+        if (sp) { e.preventDefault(); setWhere({ kind: 'space', id: sp.id }) }
+        return
+      }
+      /* And the channel above or below the one that is open. Alt rather than
+         Ctrl because Ctrl+Arrow is a caret key everywhere else. */
+      if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        if (where.kind !== 'space') return
+        const list = world.channels
+          .filter((c) => c.kind === 'text' && c.space_id === where.id)
+          .sort((a, b) => a.position - b.position)
+        if (!list.length) return
+        const at = list.findIndex((c) => c.id === channelId)
+        const next = list[wrapped(at === -1 ? 0 : at, e.key === 'ArrowDown' ? 1 : -1, list.length)]
+        if (next) { e.preventDefault(); openToRead(next.id) }
+      }
+    }
+    window.addEventListener('keydown', on)
+    return () => window.removeEventListener('keydown', on)
+  }, [world, where, channelId, openToRead])
   /* What this account may do in the server it is looking at, which decides
      what there is to open rather than what happens once it is opened. */
   const here = space ? world.held.in(space.id, null) : []
@@ -1999,6 +2105,19 @@ export function Shell({
             setSlid(null)
           }} />
       )}
+
+      {/* Both open from the keyboard and from nowhere else on screen, which
+          is why the sheet exists: a shortcut nobody can discover may as well
+          not be bound. */}
+      {switching && (
+        <Switcher
+          targets={targets}
+          recent={visited.current}
+          onGo={goToTarget}
+          onClose={() => setSwitching(false)}
+        />
+      )}
+      {showingKeys && <Shortcuts onClose={() => setShowingKeys(false)} />}
 
       {card && world.people.get(card.id) && (
         <Profile
