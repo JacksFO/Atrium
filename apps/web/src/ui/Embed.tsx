@@ -76,9 +76,32 @@ function BareImage({ server, url }: { server: Api; url: string }) {
  * picture is still a card, so a failure here simply draws nothing.
  */
 function CardImage({ server, url }: { server: Api; url: string }) {
+  const [big, setBig] = useState(false)
   const { src, failed } = useProxiedImage(server, url)
   if (failed || !src) return null
-  return <img className="emedia" src={src} alt="" loading="lazy" />
+  return (
+    <>
+      {/*
+        * It opens, like every other picture in the app.
+        *
+        * A card's picture is cropped to the width of the card and 300 pixels
+        * tall, which for the thing somebody was actually sent - a map, a
+        * screenshot, a chart - is a thumbnail of it and not a look at it. The
+        * picture beside it in the same message opens, and the one somebody
+        * links on its own opens; this was the only one that did not, and a
+        * picture that does nothing when clicked reads as one that is broken
+        * rather than one that is small on purpose.
+        *
+        * The card's own link is still the title, and this is a button, so
+        * pressing the picture opens it here rather than sending somebody to
+        * the site to find it.
+        */}
+      <button className="emedia" onClick={() => setBig(true)}>
+        <img src={src} alt="" loading="lazy" />
+      </button>
+      {big && <Lightbox src={src} alt="" onClose={() => setBig(false)} />}
+    </>
+  )
 }
 
 function Card({ server, url }: { server: Api; url: string }) {
