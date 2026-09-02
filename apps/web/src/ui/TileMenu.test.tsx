@@ -132,3 +132,63 @@ describe('somebody else’s screen, with sound in it', () => {
     expect([...el.querySelectorAll('button')].some((b) => b.textContent === 'Unmute')).toBe(true)
   })
 })
+
+/**
+ * Turning one person down.
+ *
+ * A person's microphone has always arrived as its own sound under its own key
+ * and played at its own volume - what was missing was the way to set it. This
+ * asked whether the tile was a screen before offering a slider, so the only
+ * sound anybody could set was a share's, and one friend twice as loud as
+ * everybody else was something to put up with.
+ */
+describe('somebody else’s voice', () => {
+  const withVoice = () => {
+    const c = call()
+    /* jsdom has no MediaStream, and nothing here looks inside one - what the
+       menu asks is whether there is a sound under that key at all. */
+    c.sounds.set(keyOf('voice', 'pat'), {} as MediaStream)
+    return c
+  }
+  const open = () => mount(
+    <TileMenu streamKey={keyOf('voice', 'pat')} call={withVoice()} me="me" label="Pat"
+      master={100} onClose={noop} onVolume={noop} onWatch={noop}
+      onFull={noop} onPopOut={noop} quality={SHARE_PRESETS[0]!} />,
+  )
+
+  it('can be turned down', () => {
+    expect(open().querySelector('input[type="range"]'), 'no slider for a voice')
+      .not.toBeNull()
+  })
+
+  it('and named as a person rather than as a picture', () => {
+    const text = open().textContent ?? ''
+    expect(text).toContain('Pat')
+    expect(text, 'a voice tile called itself a camera').not.toContain('camera')
+  })
+
+  /*
+   * And the things that are about a picture are absent rather than disabled.
+   * There is no picture behind a voice, so filling the screen with it, popping
+   * it out and watching it are all buttons that could not do what they say.
+   */
+  it('and is not offered anything that needs a picture', () => {
+    const text = open().textContent ?? ''
+    expect(text).not.toContain('Full screen')
+    expect(text).not.toContain('Pop out')
+    expect(text).not.toContain('Watch')
+  })
+
+  /* Your own voice is not something to turn down - that is what the
+     microphone button is for, and a slider here would be feedback. */
+  it('but your own is not', () => {
+    const c = call()
+    c.sounds.set(keyOf('voice', 'me'), {} as MediaStream)
+    const el = mount(
+      <TileMenu streamKey={keyOf('voice', 'me')} call={c} me="me" label="Me"
+        master={100} onClose={noop} onVolume={noop} onWatch={noop}
+        onFull={noop} onPopOut={noop} quality={SHARE_PRESETS[0]!} />,
+    )
+    expect(el.querySelector('input[type="range"]')).toBeNull()
+  })
+})

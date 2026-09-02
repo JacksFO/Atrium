@@ -118,7 +118,22 @@ export function Stage({ world, call, controls, name, master, onClose }: {
           const person = world.people.get(m.id) ?? fallback(m.id, m.name)
           const loud = call.speaking.has(m.id)
           return (
-            <div className={loud ? 'scell talking' : 'scell'} key={m.id}>
+            <div
+              className={loud ? 'scell talking' : 'scell'}
+              key={m.id}
+              /*
+               * Right-click a face for the same menu a picture gets, which
+               * for somebody with no camera is where their volume lives. A
+               * tile with nothing to click was the only place in a call
+               * without a way in, and one friend being twice as loud as
+               * everybody else is the ordinary case.
+               */
+              onContextMenu={(e) => {
+                if (m.id === me) return
+                e.preventDefault()
+                setMenu(keyOf('voice', m.id))
+              }}
+            >
               <div className="face">
                 <span className={loud ? 'ring on' : 'ring'}>
                   <Avatar user={person} size="xl" />

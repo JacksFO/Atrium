@@ -47,12 +47,26 @@ export function TileMenu({
   const { source, id } = partsOf(streamKey)
   const mine = id === me
   const screen = source === 'share'
+  /* Somebody's microphone, with no picture behind it. Everything in here
+     about a picture - filling the screen, popping out, watching - is absent
+     rather than disabled, because there is nothing for any of them to act
+     on. */
+  const justAVoice = source === 'voice'
   const watching = call.watching.has(streamKey)
   /* Whether there is a sound to set a volume for, asked of the sounds this
      call actually has. The old client asked whether an <audio> element with a
      guessed-at id was in the document, and that element was never removed —
      so it offered a volume slider for a share that had ended. */
-  const hasSound = !mine && screen && call.sounds.has(streamKey)
+  /*
+   * Any sound that is not yours, rather than only a share's.
+   *
+   * A person's microphone arrives as its own sound under its own key and has
+   * always been played at its own volume - the only thing missing was the
+   * slider, because this asked for a share before offering one. One friend
+   * being twice as loud as everybody else is the ordinary case, and the
+   * setting in this menu was the one place it could have been fixed.
+   */
+  const hasSound = !mine && call.sounds.has(streamKey)
   const level = Math.round(volumeOf(call, streamKey, master) * 100)
   const quiet = level === 0
   /* Where it was before it was muted, so unmuting is not a guess. */
@@ -67,13 +81,14 @@ export function TileMenu({
       <div className="tilem">
         <p className="hd2">
           {mine
-            ? screen ? 'Your screen' : 'Your camera'
-            : `${label}'s ${screen ? 'screen' : 'camera'}`}
+            ? justAVoice ? 'You' : screen ? 'Your screen' : 'Your camera'
+            : `${label}${justAVoice ? '' : screen ? "'s screen" : "'s camera"}`}
         </p>
 
         {hasSound ? (
           <>
-            <Row what="Its volume" note={quiet ? 'Muted' : `${level}%`}>
+            <Row what={justAVoice ? 'How loud they are' : 'Its volume'}
+              note={quiet ? 'Muted' : `${level}%`}>
               <input
                 type="range" className="rng" min={0} max={100} value={level}
                 onChange={(e) => onVolume(Number(e.target.value))}
@@ -87,7 +102,7 @@ export function TileMenu({
               * remembers where it was and puts it back. One game too loud
               * during a conversation is the whole of what this is for.
               */}
-            <Row what="Its sound" note={quiet ? 'Off' : 'On'}>
+            <Row what={justAVoice ? 'Hearing them' : 'Its sound'} note={quiet ? 'Off' : 'On'}>
               <button className="btn" onClick={() => {
                 if (quiet) { onVolume(before.current || 100); return }
                 before.current = level
@@ -130,19 +145,21 @@ export function TileMenu({
           </Row>
         )}
 
-        <Row what="Fill the screen" note="Everything else gets out of the way">
-          <button className="btn" onClick={() => { onFull(); onClose() }}>Full screen</button>
-        </Row>
+        {!justAVoice && (
+          <Row what="Fill the screen" note="Everything else gets out of the way">
+            <button className="btn" onClick={() => { onFull(); onClose() }}>Full screen</button>
+          </Row>
+        )}
 
         {/* Only where the browser has somewhere to put one. Offered
             regardless, it is a button that does nothing on a phone. */}
-        {typeof document !== 'undefined' && document.pictureInPictureEnabled && (
+        {!justAVoice && typeof document !== 'undefined' && document.pictureInPictureEnabled && (
           <Row what="A window of its own" note="For a second monitor, or beside something else">
             <button className="btn" onClick={() => { onPopOut(); onClose() }}>Pop out</button>
           </Row>
         )}
 
-        {!mine && (
+        {!mine && !justAVoice && (
           <Row what={screen ? 'Watching it' : 'Showing it'}
             note={watching ? 'You are' : 'Nothing is being sent'}>
             <button className="btn" onClick={() => { onWatch(!watching); onClose() }}>

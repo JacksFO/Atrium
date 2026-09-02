@@ -334,3 +334,43 @@ describe('what a call says about its connection', () => {
     expect(emptyCall().quality).toBe('unknown')
   })
 })
+
+/**
+ * Turning one person down.
+ *
+ * A call has several sounds in it and they were never interchangeable - a
+ * person's microphone has always arrived as its own sound under its own key
+ * and played at its own volume. What was missing was the way to set it: the
+ * menu asked whether the tile was a screen before offering a slider, so the
+ * only sound anybody could set was a share's, and one friend twice as loud as
+ * everybody else was something to put up with.
+ */
+describe('how loud one person is', () => {
+  it('follows the setting in Settings until somebody says otherwise', () => {
+    const call = emptyCall()
+    expect(volumeOf(call, keyOf('voice', 'u1'), 50)).toBeCloseTo(0.5)
+  })
+
+  it('and their own level once one is set', () => {
+    const call = emptyCall()
+    call.levels.set(keyOf('voice', 'u1'), 20)
+    expect(volumeOf(call, keyOf('voice', 'u1'), 100)).toBeCloseTo(0.2)
+  })
+
+  /* One person's level is theirs alone - the point of setting it is that
+     everybody else stays where they were. */
+  it('and leaves everybody else where they were', () => {
+    const call = emptyCall()
+    call.levels.set(keyOf('voice', 'u1'), 20)
+    expect(volumeOf(call, keyOf('voice', 'u2'), 100)).toBeCloseTo(1)
+  })
+
+  /* And a share is still set on its own, which is the distinction the whole
+     thing exists for: turning down a game must not turn down the person
+     telling you about it. */
+  it('and is a different setting from their share', () => {
+    const call = emptyCall()
+    call.levels.set(keyOf('voice', 'u1'), 10)
+    expect(volumeOf(call, keyOf('share', 'u1'), 100)).toBeCloseTo(1)
+  })
+})

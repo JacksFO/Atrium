@@ -21,7 +21,6 @@ import { describe, expect, it } from 'vitest'
  * Read from the source: what is being checked is a dependency array, which
  * exists only in the source.
  */
-const NEWLINE = String.fromCharCode(10)
 /*
  * Read with one kind of line ending, whatever is on disk.
  *
