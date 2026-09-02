@@ -9,6 +9,7 @@ import { voiceModerationFor } from '../lib/voiceModeration'
 import { nameLook } from '../lib/nameStyle'
 import { nameIn, nicknameIn, spaceOfChannel } from '../lib/names'
 import { canCopyPictures, copyPicture } from '../lib/copyPicture'
+import { NewSince } from './NewSince'
 import { toast } from '../lib/toast'
 import { memberModerationFor } from '../lib/memberModeration'
 import type { Api } from '../lib/api'
@@ -3772,6 +3773,46 @@ function Conversation({
           </button>
         )}
       </div>
+      {/*
+        * What arrived while they were away.
+        *
+        * Between the header and the messages, so it is there before any
+        * scrolling: the line in the list says the same thing but is inside
+        * the list, and a channel with forty new messages opens at the end of
+        * them with the line somewhere above, off screen.
+        */}
+      <NewSince
+        count={markFrom ?? 0}
+        since={openId ? world.lastRead.get(openId) ?? null : null}
+        onGo={() => {
+          const el = stream.current
+          if (!el) return
+          /*
+           * The line if it is drawn, and otherwise the message it would have
+           * sat above.
+           *
+           * The list only draws the line when it is worth drawing - a long
+           * enough gap, and the start of the run actually on screen - so the
+           * bar can honestly say "sixteen new" with no line to jump to. The
+           * count is from the end, which is the one thing true either way.
+           */
+          const line = el.querySelector('.unread-line')
+          const target = line
+            ?? (() => {
+              const rows = el.querySelectorAll('[data-msg]')
+              const at = rows.length - (markFrom ?? 0)
+              return rows[Math.max(0, Math.min(at, rows.length - 1))] ?? null
+            })()
+          target?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        }}
+        onRead={() => {
+          if (openId) send(readFrame(openId))
+          /* Cleared here as well as asked for: the count comes back from the
+             server on the next frame, and a bar that lingers until it does
+             reads as a button that did nothing. */
+          setMarkFrom(null)
+        }}
+      />
       <div
         className="stream"
         ref={stream}

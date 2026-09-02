@@ -1753,6 +1753,26 @@ body:has(.pgrip.on){cursor:ew-resize;user-select:none}
 /* Red rather than amber: this is the same mark every other app of this kind
    draws in red, and amber reads as a warning about the messages rather than
    a place in them. */
+/* What arrived while somebody was away, under the header and above the
+   messages. Takes the accent rather than the unread red: it is an offer to
+   catch up, not a warning, and it sits on screen for as long as they take. */
+.newsince{flex:none;display:flex;align-items:center;gap:8px;
+  padding:0 8px 0 16px;height:30px;background:var(--acc);color:#fff;
+  font-size:.82em;font-weight:600;
+  /* Above the messages so the shadow falls on them, and so a row scrolling
+     under it passes behind rather than beside. */
+  position:relative;z-index:1;box-shadow:0 1px 6px rgba(0,0,0,.22)}
+/* The strip is the way back, so it takes the room; the button on the right
+   takes only what it needs. Both are buttons, so neither inherits the
+   browser's own padding on top of ours - see the reset. */
+.newsince-go{flex:1;min-width:0;text-align:left;background:none;border:0;padding:0;
+  color:inherit;font:inherit;cursor:pointer;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.newsince-read{flex:none;display:flex;align-items:center;gap:5px;background:none;
+  border:0;padding:0 4px;color:inherit;font:inherit;cursor:pointer;opacity:.92}
+.newsince-go:hover,.newsince-read:hover{text-decoration:underline}
+.newsince-read:hover{opacity:1}
+
 .unread-line{display:flex;align-items:center;gap:12px;margin:18px -8px 6px;
   padding:0 8px;color:var(--bad);font-size:.74em;font-weight:700;
   letter-spacing:.09em;text-transform:uppercase}
