@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
   ICON_READS_MAX,
+  gotFor,
   iconFor,
   noIconYet,
+  nothingYet,
   sameIcon,
   wantsIconRead,
+  wantsRead,
   withIconRead,
+  withRead,
   type IconPixels,
 } from './gameIcon'
 
@@ -42,11 +46,11 @@ describe('asking again', () => {
     let hunt = noIconYet('Counter-Strike 2')
 
     hunt = withIconRead(hunt, 'Counter-Strike 2', GENERIC)
-    expect(hunt.icon, 'the first read is still worth having').toBe(GENERIC)
+    expect(hunt.got, 'the first read is still worth having').toBe(GENERIC)
     expect(wantsIconRead(hunt, 'Counter-Strike 2'), 'it stopped after one').toBe(true)
 
     hunt = withIconRead(hunt, 'Counter-Strike 2', REAL)
-    expect(hunt.icon).toBe(REAL)
+    expect(hunt.got).toBe(REAL)
   })
 
   /* And stops once the answer holds still - the common case, where the cache
@@ -78,7 +82,7 @@ describe('a read that found nothing', () => {
    */
   it('does not settle it', () => {
     const hunt = withIconRead(noIconYet('Deep Rock Galactic'), 'Deep Rock Galactic', null)
-    expect(hunt.icon).toBeUndefined()
+    expect(hunt.got).toBeUndefined()
     expect(hunt.settled).toBe(false)
     expect(wantsIconRead(hunt, 'Deep Rock Galactic')).toBe(true)
   })
@@ -98,7 +102,7 @@ describe('a read that found nothing', () => {
   it('and never loses an icon it already had', () => {
     let hunt = withIconRead(noIconYet('Factorio'), 'Factorio', REAL)
     hunt = withIconRead(hunt, 'Factorio', null)
-    expect(hunt.icon).toBe(REAL)
+    expect(hunt.got).toBe(REAL)
   })
 })
 
@@ -113,7 +117,7 @@ describe('the cap on how long it keeps asking', () => {
     expect(hunt.reads).toBe(ICON_READS_MAX)
     expect(hunt.settled).toBe(true)
     expect(wantsIconRead(hunt, 'Rimworld'), 'it kept asking forever').toBe(false)
-    expect(hunt.icon, 'it gave up holding the newest answer').toEqual(icon(ICON_READS_MAX))
+    expect(hunt.got, 'it gave up holding the newest answer').toEqual(icon(ICON_READS_MAX))
   })
 
   /* The hot path. A game somebody has had open for hours asks for nothing,
@@ -138,7 +142,7 @@ describe('a different game', () => {
     expect(wantsIconRead(hunt, 'Stardew Valley')).toBe(true)
     const next = withIconRead(hunt, 'Stardew Valley', GENERIC)
     expect(next.for).toBe('Stardew Valley')
-    expect(next.icon, "it kept the last game's icon").toBe(GENERIC)
+    expect(next.got, "it kept the last game's icon").toBe(GENERIC)
     expect(next.reads).toBe(1)
     expect(next.settled).toBe(false)
   })
@@ -151,7 +155,7 @@ describe('a different game', () => {
 
     const next = withIconRead(hunt, 'Stardew Valley', null)
     expect(next.for).toBe('Stardew Valley')
-    expect(next.icon, "it wore the last game's icon").toBeUndefined()
+    expect(next.got, "it wore the last game's icon").toBeUndefined()
   })
 
   /*
@@ -169,5 +173,53 @@ describe('a different game', () => {
 
     expect(iconFor(hunt, 'Hades')).toBe(REAL)
     expect(iconFor(hunt, 'Stardew Valley'), "it wore Hades' icon").toBeUndefined()
+  })
+})
+
+/**
+ * The other thing that reads this way: a track's cover art.
+ *
+ * Found auditing the game fix - the same shape sat two functions above it in
+ * main.ts and had the same fault. The track was latched before the read, so a
+ * cover that came back empty once was missing for as long as the song played,
+ * and a player that takes a moment to publish its artwork is the ordinary
+ * case rather than a rare one.
+ *
+ * The rule is shared rather than copied, so these are the same lines the game
+ * uses with a string comparison in place of a pixel one.
+ */
+describe('a track’s cover', () => {
+  const same = (a: string, b: string) => a === b
+
+  it('is asked again when the first read comes back empty', () => {
+    let hunt = nothingYet<string>('Song|Artist')
+    hunt = withRead(hunt, 'Song|Artist', null, same)
+    expect(gotFor(hunt, 'Song|Artist')).toBeUndefined()
+    expect(wantsRead(hunt, 'Song|Artist'), 'it gave up after one empty read').toBe(true)
+
+    hunt = withRead(hunt, 'Song|Artist', 'data:image/png;base64,AAA', same)
+    expect(gotFor(hunt, 'Song|Artist')).toBe('data:image/png;base64,AAA')
+  })
+
+  /* And stops asking once the player has answered the same thing twice. */
+  it('and stops once the answer holds still', () => {
+    let hunt = withRead(nothingYet<string>('S|A'), 'S|A', 'art', same)
+    hunt = withRead(hunt, 'S|A', 'art', same)
+    expect(hunt.settled).toBe(true)
+    expect(wantsRead(hunt, 'S|A')).toBe(false)
+  })
+
+  /* And never wears the last song's cover. */
+  it('and belongs to its own track', () => {
+    const hunt = withRead(nothingYet<string>('One|A'), 'One|A', 'first', same)
+    expect(gotFor(hunt, 'One|A')).toBe('first')
+    expect(gotFor(hunt, 'Two|B'), "it wore the last track's cover").toBeUndefined()
+  })
+
+  /* An empty string is not a cover: a player that publishes an empty field
+     must read as "nothing yet", or it settles on having no art at all. */
+  it('and treats an empty answer as no answer', () => {
+    const hunt = withRead(nothingYet<string>('S|A'), 'S|A', null, same)
+    expect(hunt.settled).toBe(false)
   })
 })

@@ -138,13 +138,27 @@ export class Gateway {
     this.setState('offline')
   }
 
-  send(payload: unknown): void {
+  /**
+   * Hand something to the socket, and say whether it went.
+   *
+   * Dropped rather than queued. Everything sent this way is about right now —
+   * that somebody is typing, that a message was read — and a typing notice
+   * delivered when the connection comes back is worse than none.
+   *
+   * A message is the exception, and the answer is what makes it possible to
+   * treat it as one. This used to return nothing, so the composer cleared the
+   * box whether the words went or not: a wifi blip, a sleeping laptop, or a
+   * restart of the server mid-sentence took what somebody had typed and said
+   * nothing about it. Queuing would be the wrong fix - the connection can be
+   * away for a minute and a message arriving from that far back is a surprise
+   * - so the caller is told instead, and decides.
+   */
+  send(payload: unknown): boolean {
     if (this.socket && this.socket.readyState === OPEN) {
       this.socket.send(JSON.stringify(payload))
+      return true
     }
-    /* Dropped rather than queued. Everything sent this way is about right
-       now — that somebody is typing, that a message was read — and a typing
-       notice delivered when the connection comes back is worse than none. */
+    return false
   }
 
   private connect(): void {

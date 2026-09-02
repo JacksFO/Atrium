@@ -11,6 +11,7 @@ import { nameIn, nicknameIn, spaceOfChannel } from '../lib/names'
 import { canCopyPictures, copyPicture } from '../lib/copyPicture'
 import { NewSince } from './NewSince'
 import { JumpDown } from './JumpDown'
+import { badgeLabel } from '../lib/shell'
 import { toast } from '../lib/toast'
 import { memberModerationFor } from '../lib/memberModeration'
 import type { Api } from '../lib/api'
@@ -3019,7 +3020,11 @@ function Channels({
                   absent on a muted channel — the point of muting it is not to
                   be told, and a number is being told. */}
               {!world.muted.has(c.id) && !!world.unread.get(c.id) && (
-                <span className="pill">{world.unread.get(c.id)}</span>
+                /* Through badgeLabel, like the badge on the taskbar. The
+                   server stops counting at a hundred, so the raw number is a
+                   ceiling wearing the clothes of an exact count - and the
+                   same fact read "100" here and "99+" on the taskbar. */
+                <span className="pill">{badgeLabel(world.unread.get(c.id) ?? 0)}</span>
               )}
             </button>
           )))}
@@ -3048,7 +3053,7 @@ function Channels({
                 <span className="nm">{c.name}</span>
                 {world.muted.has(c.id) && <Icon name="belloff" size={13} />}
                 {!world.muted.has(c.id) && !!world.unread.get(c.id) && (
-                  <span className="pill">{world.unread.get(c.id)}</span>
+                  <span className="pill">{badgeLabel(world.unread.get(c.id) ?? 0)}</span>
                 )}
               </button>
               {/* Off the list, not ended. Shown on hover and to the keyboard,

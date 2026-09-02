@@ -11,7 +11,10 @@ import { createHash } from 'node:crypto'
 import { autoUpdater } from 'electron-updater'
 import { matchGame } from './matchgame.js'
 import { movedDeliberately } from './seek.js'
-import { iconFor, noIconYet, wantsIconRead, withIconRead, type IconHunt } from './gameIcon.js'
+import {
+  gotFor, iconFor, noIconYet, nothingYet, wantsIconRead, wantsRead, withIconRead, withRead,
+  type Hunt, type IconHunt,
+} from './gameIcon.js'
 import { whatsNewFor, type Saved } from './whatsnew.js'
 import { whatToTidy, humanBytes } from './tidy.js'
 import { join, normalize } from 'node:path'
@@ -1438,8 +1441,15 @@ function nativePresence(): PresenceNative {
  * open and a few hundred kilobytes to copy - and it cannot change without the
  * track changing. So it is fetched once when the title does, and kept.
  */
-let lastTrack = ''
-let lastArt: string | undefined
+/*
+ * Where the reading of the current track's cover has got to.
+ *
+ * The same shape as the game's icon, and for the same reason: this latched
+ * the track before the read and never asked again, so a cover that came back
+ * empty once was missing for as long as the song played. gameIcon.ts holds
+ * the rule; this is the other thing that reads the same way.
+ */
+let artHunt: Hunt<string> = nothingYet<string>('')
 /*
  * Where the track was said to be, and when it was said.
  *
@@ -1497,7 +1507,7 @@ async function keepIconFresh(exe: string, name: string): Promise<void> {
 
 async function musicNow(): Promise<Music | null> {
   const playing = await nativePresence().whatIsPlayingLater(false)
-  if (!playing) { lastTrack = ''; lastArt = undefined; return null }
+  if (!playing) { artHunt = nothingYet<string>(''); return null }
   const app = String(playing.app ?? '').toLowerCase()
   if (!app.includes('spotify')) return null
   if (playing.playing !== true) return null
@@ -1510,17 +1520,19 @@ async function musicNow(): Promise<Music | null> {
   if (typeof playing.length === 'number') out.length = playing.length
 
   const track = `${name}|${artist}`
-  if (track !== lastTrack) {
-    lastTrack = track
+  if (wantsRead(artHunt, track)) {
     const withArt = await nativePresence().whatIsPlayingLater(true)
-    lastArt = typeof withArt?.art === 'string' ? withArt.art : undefined
+    const art = typeof withArt?.art === 'string' && withArt.art ? withArt.art : null
+    artHunt = withRead(artHunt, track, art, (x, y) => x === y)
   }
   /*
    * Full size from here. It is made small in the renderer, which has a canvas
    * to redraw it with and this process does not - and it never leaves the
    * machine at this size.
    */
-  if (lastArt) out.art = lastArt
+  /* By name, so a cover never outlives the track it belongs to. */
+  const art = gotFor(artHunt, track)
+  if (art) out.art = art
   return out
 }
 

@@ -156,7 +156,9 @@ export function Composer({
   /** What is open, for the placeholder. Null when nothing is. */
   name: string | null
   kind: ChannelKind | null
-  onSend: (body: string) => void
+  /* True when it went. A message that did not go leaves the words in the
+     box, because clearing it is how they get lost. */
+  onSend: (body: string) => boolean | void
   /** Said as they type, and throttled by whoever handles it — one notice per
    *  couple of seconds rather than one per key. */
   onTyping?: () => void
@@ -221,6 +223,9 @@ export function Composer({
   where?: string | null
 }) {
   const [draft, setDraft] = useState('')
+  /* Said out loud when a message did not go, because the only other sign is
+     the box still being full - which reads as a key that did not register. */
+  const [sendFailed, setSendFailed] = useState(false)
 
   /*
    * What is half-written in each of the others.
@@ -652,7 +657,25 @@ export function Composer({
     const body = asWire(written, picked.current, mentionable)
     if (!body) return
 
-    onSend(body)
+    /*
+     * Cleared only if it went.
+     *
+     * Messages go over the gateway socket, and a socket that is not open
+     * drops what it is handed. The box used to empty either way, so a wifi
+     * blip or a restart of the server mid-sentence took the words with it and
+     * said nothing - which for a chat app is the worst thing that can happen
+     * quietly. Now the words stay where they are, and can be sent again when
+     * the line comes back.
+     *
+     * `false` and nothing else counts as a failure: the older callers of this
+     * return nothing at all, and treating that as a drop would leave the box
+     * full after every message.
+     */
+    if (onSend(body) === false) {
+      setSendFailed(true)
+      return
+    }
+    setSendFailed(false)
     picked.current.clear()
     setDraft('')
     /* Kept, because sending is not a reason to stop typing. */
@@ -821,6 +844,11 @@ export function Composer({
 
       {uploadError && <div className="err" style={{ margin: '0 0 6px' }}>{uploadError}</div>}
 
+      {sendFailed && (
+        <div className="sayfail" role="status">
+          That did not send — the app is not connected. Your message is still here.
+        </div>
+      )}
       {!!pending?.length && (
         <div className="pend">
           {pending.map((p) => (

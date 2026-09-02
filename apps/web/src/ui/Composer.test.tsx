@@ -191,3 +191,54 @@ describe('the formatting shortcuts', () => {
     expect(box.value).toBe('hello')
   })
 })
+
+/**
+ * A message that could not be sent stays in the box.
+ *
+ * Found auditing failure modes. Messages go over the gateway socket, and a
+ * socket that is not open drops what it is handed. The box was cleared the
+ * moment the text was passed on, whether it went or not - so a wifi blip, a
+ * sleeping laptop or a restart of the server mid-sentence took the words and
+ * said nothing, which for a chat app is the worst thing that can happen
+ * quietly.
+ */
+describe('when the message does not go', () => {
+  it('keeps the words rather than clearing the box', () => {
+    const el = mount(<Composer name="general" kind="text" onSend={() => false} />)
+    const box = type(el, 'the words somebody typed')
+    enter(box)
+
+    expect(box.value, 'the box was emptied and the words are gone')
+      .toBe('the words somebody typed')
+  })
+
+  /* And says so, because a box that stays full otherwise reads as a key that
+     did not register. */
+  it('and says that it did not go', () => {
+    const el = mount(<Composer name="general" kind="text" onSend={() => false} />)
+    enter(type(el, 'words'))
+    expect(el.textContent ?? '').toMatch(/did not send/i)
+  })
+
+  /* And clears it when it went, which is every ordinary message. */
+  it('but clears it when it went', () => {
+    const el = mount(<Composer name="general" kind="text" onSend={() => true} />)
+    const box = type(el, 'this one goes')
+    enter(box)
+    expect(box.value, 'the box kept the words after a good send').toBe('')
+  })
+
+  /*
+   * And an older caller that returns nothing is not treated as a failure.
+   *
+   * Only `false` counts. Several things still hand this a function that
+   * returns undefined, and reading that as a drop would leave the box full
+   * after every message.
+   */
+  it('and treats a caller that says nothing as a send', () => {
+    const el = mount(<Composer name="general" kind="text" onSend={() => undefined} />)
+    const box = type(el, 'quiet caller')
+    enter(box)
+    expect(box.value).toBe('')
+  })
+})

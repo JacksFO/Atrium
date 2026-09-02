@@ -157,3 +157,69 @@ describe('rubbish on the wire', () => {
     expect(onEvent).not.toHaveBeenCalled()
   })
 })
+
+/**
+ * What happens to a message sent while the line is down.
+ *
+ * Found auditing failure modes. Everything the client says goes over this
+ * socket, and send() drops anything handed to it while the socket is not
+ * open - deliberately, and with a comment saying why: most of what goes this
+ * way is "somebody is typing", and a typing notice delivered a minute late is
+ * worse than none at all.
+ *
+ * A message is not that. The composer clears the box the moment it hands the
+ * text over, so a drop takes the words with it - the box empties, nothing
+ * appears in the channel, and nothing says so. The window is short and it is
+ * not rare: a sleeping laptop, a wifi blip, and every restart of the server
+ * while somebody is mid-sentence.
+ *
+ * These pin what actually happens today rather than what should. The fix is a
+ * decision about what to do instead - keep the words in the box, or say it
+ * did not go - and until that is made, this is the behaviour to know about.
+ */
+describe('sending while the line is down', () => {
+  it('drops it, and says nothing', () => {
+    const { g, socket: sock } = gateway(socket)
+    g.open('tok')
+    sock().open()
+    const before = sock().sent.length
+
+    /* The socket is there but not open, which is what a dropped connection
+       looks like from here for as long as the retry takes. */
+    sock().s.readyState = 3
+    g.send({ t: 'send', channelId: 'c1', body: 'the words somebody typed' })
+
+    expect(sock().sent.length, 'it was sent after all').toBe(before)
+  })
+
+  /*
+   * And there is no way for the caller to tell.
+   *
+   * send returns nothing whether it went or not, so the composer cannot know
+   * to keep the draft - which is why the words are simply gone rather than
+   * still in the box.
+   */
+  it('and hands nothing back to say so', () => {
+    const { g, socket: sock } = gateway(socket)
+    g.open('tok')
+    sock().open()
+    sock().s.readyState = 3
+    const answer = g.send({ t: 'send', channelId: 'c1', body: 'words' })
+    expect(answer, 'send now reports delivery - the composer can use it').toBe(false)
+  })
+
+  /* Nothing is queued for the reconnection either: the socket that comes
+     back carries hello, and not what was said while it was away. */
+  it('and does not go when the line comes back', () => {
+    const { g, socket: sock } = gateway(socket)
+    g.open('tok')
+    sock().open()
+    sock().s.readyState = 3
+    g.send({ t: 'send', channelId: 'c1', body: 'the words somebody typed' })
+
+    sock().s.readyState = 1
+    sock().open()
+    const everything = sock().sent.join(' ')
+    expect(everything, 'it was queued after all').not.toContain('the words somebody typed')
+  })
+})

@@ -1247,6 +1247,11 @@ body:has(.pgrip.on){cursor:ew-resize;user-select:none}
    to be something for that button to be positioned against, so it takes the
    size the list used to take and passes it straight on. */
 .streamwrap{flex:1;min-height:0;display:flex;flex-direction:column;position:relative}
+/* Said above the box, in the colour the app uses for something that went
+   wrong rather than something that is merely new. */
+.sayfail{margin:0 0 6px;padding:6px 10px;border-radius:8px;font-size:.82em;
+  background:color-mix(in oklab,var(--bad) 14%,transparent);
+  color:var(--bad);border:1px solid color-mix(in oklab,var(--bad) 30%,transparent)}
 /* Over the last line or two of the conversation, taking no clicks itself -
    a transparent band that swallowed a press meant for a message would be
    worse than not being there. */

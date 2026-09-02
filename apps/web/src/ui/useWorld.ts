@@ -253,6 +253,9 @@ export function useWorld(server: Api, token: string) {
      * correct, and was invisible until something else caused a render.
      */
     changed,
-    send: useCallback((payload: unknown) => gatewayRef.current?.send(payload), []),
+    /* The answer comes back with it, so a caller with something worth
+       keeping - a message - can tell whether it went. False when there is
+       no gateway at all, which is the same thing from the caller's side. */
+    send: useCallback((payload: unknown) => gatewayRef.current?.send(payload) ?? false, []),
   }
 }

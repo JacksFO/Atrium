@@ -28,20 +28,69 @@
  * would throw away the correct answer for somebody.
  */
 
+/**
+ * The same rule, for anything read the same way.
+ *
+ * Album art has it too, two functions above the game in main.ts: the track
+ * is latched before the read and a read that comes back with nothing is
+ * never asked again, so a cover that failed once is missing for as long as
+ * the song plays. One rule rather than two copies that can drift.
+ */
+export type Hunt<T> = {
+  /** What this is about - a game, or a track. A different one starts over. */
+  for: string
+  /** The best answer so far, if there has been one. */
+  got?: T
+  reads: number
+  settled: boolean
+}
+
+/** Nothing read yet for this subject. */
+export function nothingYet<T>(name: string): Hunt<T> {
+  return { for: name, reads: 0, settled: false }
+}
+
+/** Is it worth reading again? */
+export function wantsRead<T>(hunt: Hunt<T>, name: string): boolean {
+  if (hunt.for !== name) return true
+  return !hunt.settled && hunt.reads < ICON_READS_MAX
+}
+
+/** The answer for this subject, and only for this subject. */
+export function gotFor<T>(hunt: Hunt<T>, name: string): T | undefined {
+  return hunt.for === name ? hunt.got : undefined
+}
+
+/**
+ * Fold in what a read came back with.
+ *
+ * `got` being null or undefined is a read that found nothing. It counts as a
+ * go, so a subject this never works for is not asked forever, but it must
+ * never settle the hunt: settling on nothing is how one bad read at the
+ * wrong moment used to last a whole session.
+ */
+export function withRead<T>(
+  hunt: Hunt<T>,
+  name: string,
+  got: T | null | undefined,
+  same: (a: T, b: T) => boolean,
+): Hunt<T> {
+  const from = hunt.for === name ? hunt : nothingYet<T>(name)
+  const reads = from.reads + 1
+  const spent = reads >= ICON_READS_MAX
+
+  if (got === null || got === undefined) return { ...from, reads, settled: spent }
+  if (from.got !== undefined && same(from.got, got)) {
+    return { ...from, reads, settled: true }
+  }
+  return { for: name, got, reads, settled: spent }
+}
+
 /** An icon as the native side hands it over: raw pixels and a size. */
 export type IconPixels = { width: number; height: number; rgba: Uint8Array }
 
 /** Where the reading of one game's icon has got to. */
-export type IconHunt = {
-  /** The game this is about, so a different one starts over. */
-  for: string
-  /** The best answer so far, if there has been one. */
-  icon?: IconPixels
-  /** How many times it has been asked. */
-  reads: number
-  /** Asked enough: either it stopped changing, or it has had its go. */
-  settled: boolean
-}
+export type IconHunt = Hunt<IconPixels>
 
 /**
  * How many times to ask before letting it be.
@@ -53,10 +102,22 @@ export type IconHunt = {
  */
 export const ICON_READS_MAX = 5
 
-/** Nothing read yet for this game. */
-export function noIconYet(name: string): IconHunt {
-  return { for: name, reads: 0, settled: false }
+/** The same picture, to the pixel. */
+export function sameIcon(a: IconPixels, b: IconPixels): boolean {
+  if (a.width !== b.width || a.height !== b.height) return false
+  if (a.rgba.length !== b.rgba.length) return false
+  for (let i = 0; i < a.rgba.length; i++) if (a.rgba[i] !== b.rgba[i]) return false
+  return true
 }
+
+/*
+ * The game's own names for the rule above, so the reading of main.ts says
+ * what it is doing. They are the general thing with the picture comparison
+ * filled in - one rule, not a second copy that can drift from it.
+ */
+
+/** Nothing read yet for this game. */
+export const noIconYet = (name: string): IconHunt => nothingYet<IconPixels>(name)
 
 /**
  * Is it worth reading the icon this tick?
@@ -65,10 +126,8 @@ export function noIconYet(name: string): IconHunt {
  * of goes, which is what keeps this off the hot path: a game somebody has had
  * open for three hours answers false here every time.
  */
-export function wantsIconRead(hunt: IconHunt, name: string): boolean {
-  if (hunt.for !== name) return true
-  return !hunt.settled && hunt.reads < ICON_READS_MAX
-}
+export const wantsIconRead = (hunt: IconHunt, name: string): boolean =>
+  wantsRead(hunt, name)
 
 /**
  * The icon for this game, and only for this game.
@@ -79,47 +138,12 @@ export function wantsIconRead(hunt: IconHunt, name: string): boolean {
  * at one game's name over another game's icon, so the name is checked at the
  * point of use rather than assumed at the point of reading.
  */
-export function iconFor(hunt: IconHunt, name: string): IconPixels | undefined {
-  return hunt.for === name ? hunt.icon : undefined
-}
+export const iconFor = (hunt: IconHunt, name: string): IconPixels | undefined =>
+  gotFor(hunt, name)
 
-/** The same picture, to the pixel. */
-export function sameIcon(a: IconPixels, b: IconPixels): boolean {
-  if (a.width !== b.width || a.height !== b.height) return false
-  if (a.rgba.length !== b.rgba.length) return false
-  for (let i = 0; i < a.rgba.length; i++) if (a.rgba[i] !== b.rgba[i]) return false
-  return true
-}
-
-/**
- * Fold in what a read came back with.
- *
- * `got` being null is a read that found nothing - the process was gone, or
- * the path would not resolve. That counts as a go, so a game this never works
- * for is not asked forever, but it must not settle the hunt: settling on
- * nothing is how one bad read at launch used to last all session.
- */
-export function withIconRead(
+/** Fold in what a read came back with. */
+export const withIconRead = (
   hunt: IconHunt,
   name: string,
   got: IconPixels | null,
-): IconHunt {
-  const from = hunt.for === name ? hunt : noIconYet(name)
-  const reads = from.reads + 1
-  /* Out of goes, whatever came back. Keep the best answer so far rather than
-     the last one, which may be the nothing that just arrived. */
-  const spent = reads >= ICON_READS_MAX
-
-  if (!got) return { ...from, reads, settled: spent }
-
-  /* The same answer twice: the shell has stopped changing its mind, and there
-     is nothing to gain by asking a third time. */
-  if (from.icon && sameIcon(from.icon, got)) {
-    return { ...from, reads, settled: true }
-  }
-
-  /* Changed, so the shell warmed up between the two - this is the newer and
-     therefore better answer, and it is worth one more read to see whether it
-     changes again. */
-  return { for: name, icon: got, reads, settled: spent }
-}
+): IconHunt => withRead(hunt, name, got, sameIcon)

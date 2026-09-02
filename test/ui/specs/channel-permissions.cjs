@@ -363,11 +363,14 @@ module.exports = {
       return { hit: true } })()`.replace('__NAME__', picked.name))
     check('the remove button is there to press', removed.hit === true, removed)
 
-    await until('them to go', `(() => {
+    /* The answer is kept, because until gives up rather than throwing: a
+       check written as `check('...', true)` passed whether they went or
+       not, which is a line that reads like a test and is not one. */
+    const went = await until('them to go', `(() => {
       const names = [...document.querySelectorAll('.modal.wide .perm-subject-n')]
         .map((n) => n.textContent.trim())
       return !names.includes(${JSON.stringify(picked.name)}) })()`, 10000)
-    check('and they are off the list', true)
+    check('and they are off the list', went === true, went)
 
     /*
      * The check that matters. Gone from the page proves nothing on its own -
