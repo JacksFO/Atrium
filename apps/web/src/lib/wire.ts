@@ -215,6 +215,14 @@ export type ServerChannel = ChannelBase & {
   kind: 'text' | 'voice'
   space_id: Id
   category_id: Id | null
+  /**
+   * How long somebody has to wait between messages here. Nought is off.
+   *
+   * Optional because a client talking to a server from before this existed
+   * gets rows without it, and "the column is not there" and "the channel is
+   * not slowed" should behave the same way.
+   */
+  slowmode_seconds?: number
   /*
    * A colour somebody picked for it, or null for the one its id gives it.
    *

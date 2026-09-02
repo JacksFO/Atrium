@@ -242,6 +242,26 @@ export function homeTooltip(world: World): string {
   return parts.length ? `Conversations — ${parts.join(', ')}` : 'Conversations'
 }
 
+/**
+ * The slow modes worth offering.
+ *
+ * Round numbers rather than a box asking for seconds - the useful settings
+ * are a handful, and "how many seconds" is a question nobody wants to be
+ * asked. The same ladder every app with this offers, so the numbers are
+ * already familiar.
+ */
+const SLOWMODES: ReadonlyArray<readonly [number, string]> = [
+  [0, 'Off'],
+  [5, '5 seconds'],
+  [10, '10 seconds'],
+  [30, '30 seconds'],
+  [60, '1 minute'],
+  [300, '5 minutes'],
+  [900, '15 minutes'],
+  [3600, '1 hour'],
+  [21600, '6 hours'],
+]
+
 function waitingInDms(world: World): number {
   let n = 0
   for (const d of world.dms) {
@@ -958,6 +978,9 @@ export function Shell({
   const [newName, setNewName] = useState('')
   /* And what it is about, for a channel being renamed. */
   const [newTopic, setNewTopic] = useState('')
+  /* Slow mode, as a number of seconds, on the same dialog as the topic - it
+     is a property of the channel and this is where a channel is changed. */
+  const [newSlow, setNewSlow] = useState(0)
   /* Something about to be removed, held until it is confirmed. */
   const [deleting, setDeleting] = useState<
     { what: 'channels' | 'categories'; id: Id; name: string } | null
@@ -1161,6 +1184,10 @@ export function Shell({
    * to know about, so there is nothing to filter here and nothing that could
    * leak by forgetting to.
    */
+  /* eslint-disable-next-line react-hooks/exhaustive-deps -- `version` is not
+     read in here and is the whole point: the world is mutated in place, so
+     its identity never moves and the counter is the only thing that says it
+     changed. */
   const targets = useMemo(() => targetsOf(world), [world, version])
 
   /** Go wherever the switcher was pointed, switching server if need be. */
@@ -1830,6 +1857,11 @@ export function Shell({
               onPick: () => {
                 setNewName(channel.name)
                 setNewTopic(channel.topic ?? '')
+                /* Primed from the channel, or opening the dialog to rename
+                   something would turn its slow mode off on the way past. */
+                setNewSlow('slowmode_seconds' in channel
+                  ? channel.slowmode_seconds ?? 0
+                  : 0)
                 setNaming({ kind: 'rename', what: 'channels', id, was: channel.name,
                   topic: channel.topic ?? '' })
               },
@@ -2270,10 +2302,10 @@ export function Shell({
             : naming.kind === 'channel' ? 'New channel'
               : naming.kind === 'nickname' ? `Nickname for ${naming.was}`
                 : `Rename ${naming.was}`}
-          onClose={() => { setNaming(null); setNewName(''); setNewTopic('') }}
+          onClose={() => { setNaming(null); setNewName(''); setNewTopic(''); setNewSlow(0) }}
           actions={
             <>
-              <button className="btn" onClick={() => { setNaming(null); setNewName(''); setNewTopic('') }}>
+              <button className="btn" onClick={() => { setNaming(null); setNewName(''); setNewTopic(''); setNewSlow(0) }}>
                 Cancel
               </button>
               {/* Empty is a real answer for a nickname - it is how somebody
@@ -2339,7 +2371,9 @@ export function Shell({
                     /* Only for a channel, and only because it was asked for
                        here - a category has no topic and sending one would
                        be a field the route quietly ignores. */
-                    ...(job.what === 'channels' ? { topic: newTopic.trim() } : {}),
+                    ...(job.what === 'channels'
+                      ? { topic: newTopic.trim(), slowmodeSeconds: newSlow }
+                      : {}),
                   })
                     .then(async () => {
                       if (job.what === 'channels' && space) {
@@ -2377,6 +2411,29 @@ export function Shell({
                 placeholder="What it is for — optional"
                 onChange={(e) => setNewTopic(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Escape') setNaming(null) }} />
+
+              {/*
+                * How long between messages, for a channel that gets busy.
+                *
+                * A list rather than a number box: the useful settings are a
+                * handful of round numbers, and "how many seconds" is a
+                * question nobody wants to be asked. The people who manage the
+                * channel are not held by it, which is said here because
+                * somebody setting it is deciding whether it will be in their
+                * own way.
+                */}
+              <label>Slow mode</label>
+              <select className="lab" value={newSlow}
+                onChange={(e) => setNewSlow(Number(e.target.value))}>
+                {SLOWMODES.map(([seconds, said]) => (
+                  <option key={seconds} value={seconds}>{said}</option>
+                ))}
+              </select>
+              <p className="hint" style={{ margin: '4px 0 0' }}>
+                {newSlow > 0
+                  ? 'Everybody waits this long between messages. Anybody who can manage the channel does not.'
+                  : 'Nobody has to wait between messages.'}
+              </p>
             </div>
           )}
           {/*

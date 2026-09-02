@@ -550,6 +550,15 @@ addColumn('messages', 'pinned_by', 'TEXT')
 addColumn('channels', 'is_private', 'INTEGER DEFAULT 0')
 
 /*
+ * How long somebody has to wait between messages here. Nought is off.
+ *
+ * On the channel rather than on the server, because it is a property of the
+ * room: one channel gets busy and the rest do not. The cheapest moderation
+ * there is - it needs nobody awake, which is the whole point of it.
+ */
+addColumn('channels', 'slowmode_seconds', 'INTEGER NOT NULL DEFAULT 0')
+
+/*
  * Where a server sits in one person's rail.
  *
  * On the membership rather than on the server, because the order is the

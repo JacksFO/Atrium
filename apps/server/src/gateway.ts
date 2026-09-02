@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto'
 import { readToken, findUser } from './auth.js'
 import { db, rememberVoiceModeration, withReadCache, joinContainer, makeContainer, setConversationClosed, channelsForClient, conversationBetween, membersOfContainer, blockedBetween, blockedBy, hydrateOne, hydrateShared, forViewer, dmMembers, isDirect, startingMembers, canSeeMember, visibleWith, channelPrefsFor, channelFor, membersOfSpace, isSpaceMember, uploadClaim, ACTIVE_USERS, PUBLIC_USER_COLUMNS, type User, ROLE_ORDER_R } from './db.js'
 import { permissionsFor, permissionsIn, writeAudit, outranks, type Permission } from './permissions.js'
+import { mayIgnoreSlowmode, slowmodeMessage, waitLeft } from './slowmode.js'
 import {
   canAccessChannel, accessibleChannelIds, canBeInVoice, channelPermissionsFor, setVoicePlacement,
 } from './access.js'
@@ -1936,7 +1937,12 @@ export function attachGateway(server: Server): void {
           }
 
           const channelId = String(msg.channelId)
-          const channel = db.prepare('SELECT id FROM channels WHERE id = ?').get(channelId)
+          /* The slow mode with it: this asked for the id alone, so the
+             column read below was always undefined and the setting did
+             nothing at all. One row either way. */
+          const channel = db.prepare(
+            'SELECT id, slowmode_seconds FROM channels WHERE id = ?'
+          ).get(channelId)
           if (!channel) return refuse('That channel no longer exists.')
           // Posting into a channel you cannot see would put a message
           // somewhere you could never read it - and tell everybody who can.
@@ -1945,6 +1951,33 @@ export function attachGateway(server: Server): void {
           }
           if (!may(client.user, 'send_messages', channelId)) {
             return refuse('You cannot send messages here.')
+          }
+          /*
+           * Slow mode, where the channel is in it.
+           *
+           * Asked of this person's own last message rather than the channel's,
+           * because a gap between everybody's messages is not slow mode - it
+           * is one queue for the room, and one person typing would hold up
+           * everybody else.
+           *
+           * Only where the channel is actually slowed: the common case is
+           * nought, which costs the column already in hand and no query at
+           * all. slowmode.ts holds the rule and is tested on its own.
+           */
+          const slow = (channel as unknown as { slowmode_seconds?: number }).slowmode_seconds ?? 0
+          if (slow > 0 && !isDirect(channelId)) {
+            const held = permissionsIn(client.user.id, channelId)
+            if (!mayIgnoreSlowmode((p) => held.has(p as Permission))) {
+              const last = db.prepare(
+                `SELECT created_at AS at FROM messages
+                  WHERE channel_id = ? AND author_id = ? AND deleted_at IS NULL
+                  ORDER BY created_at DESC LIMIT 1`
+              ).get(channelId, client.user.id) as { at?: number } | undefined
+              const left = waitLeft({
+                seconds: slow, lastAt: last?.at ?? 0, exempt: false, now: Date.now(),
+              })
+              if (left > 0) return refuse(slowmodeMessage(left))
+            }
           }
           /*
            * Who is in this conversation, asked once.

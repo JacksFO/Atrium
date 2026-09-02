@@ -9,6 +9,7 @@ import { config } from '../config.js'
 import { reconcileUploads } from '../uploads.js'
 import { isProviderUrl } from '../gifs.js'
 import { allow } from '../ratelimit.js'
+import { cleanSlowmode } from '../slowmode.js'
 import { PERMISSIONS, CHANNEL_PERMISSIONS, directPermissions, overrideTarget, overridesAt, permissionsAt, permissionsFor, permissionsIn, rolesFor, setOverride, syncChannel, unsyncChannel, writeAudit, canEditRole, filterGrantable, highestPosition, outranks, type Permission, EVERYONE_DEFAULTS } from '../permissions.js'
 import { isOperator } from '../auth.js'
 import type { User } from '../db.js'
@@ -1969,6 +1970,17 @@ export function registerAdminRoutes(app: FastifyInstance, authed: Authed): void 
     }
     if (typeof topic === 'string') {
       db.prepare('UPDATE channels SET topic = ? WHERE id = ?').run(topic.slice(0, 200), id)
+    }
+    /*
+     * Slow mode. Absent leaves it alone, the way every other field here does -
+     * somebody renaming a channel must not turn its slow mode off by not
+     * mentioning it.
+     */
+    if (body.slowmodeSeconds !== undefined) {
+      const seconds = cleanSlowmode(body.slowmodeSeconds)
+      db.prepare('UPDATE channels SET slowmode_seconds = ? WHERE id = ?').run(seconds, id)
+      writeAudit(user.id, seconds > 0 ? 'channel.slowmode' : 'channel.slowmode.off',
+        `${id} -> ${seconds}s`, spaceOfChannel(id))
     }
 
     /*
