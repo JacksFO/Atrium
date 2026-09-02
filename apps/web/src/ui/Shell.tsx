@@ -8,6 +8,8 @@ import { memberGroups, nameColourFrom, rolesOf } from '../lib/roles'
 import { voiceModerationFor } from '../lib/voiceModeration'
 import { nameLook } from '../lib/nameStyle'
 import { nameIn, nicknameIn, spaceOfChannel } from '../lib/names'
+import { canCopyPictures, copyPicture } from '../lib/copyPicture'
+import { toast } from '../lib/toast'
 import { memberModerationFor } from '../lib/memberModeration'
 import type { Api } from '../lib/api'
 import { remember, type World } from '../lib/world'
@@ -3162,7 +3164,22 @@ function Conversation({
    */
   const dropping = useFileDrop(useCallback((files: File[]) => {
     for (const f of files) void up.add(f)
-  }, [up]))
+    /*
+     * And the cursor goes to the box, so Enter sends it.
+     *
+     * A picture on its own has always been a message - send() says so, and
+     * says why - but dropping one left focus wherever the drop landed, and
+     * Enter is handled on the box. So the preview appeared, Enter did
+     * nothing, and the only way to send was to click into the box first.
+     * Reported as not being able to send without typing something.
+     *
+     * Not on a phone, for the reason opening a channel does not do it either:
+     * there is no Enter key waiting, and focusing a text box slides the
+     * keyboard up over the picture somebody has just added - so it takes away
+     * the preview in exchange for a key they do not have.
+     */
+    if (!phone) setFocusComposer((n) => n + 1)
+  }, [up, phone]))
 
   /**
    * Who can be named here.
@@ -3636,13 +3653,22 @@ function Conversation({
   const beginReply = (m: Message) => {
     setEditing(null)
     setReplyTo({ id: m.id, who: nameOf(m.author_id) })
-    /* Choosing to reply is choosing to write one. Reported: picking Reply
-       left the cursor wherever it was and the reply box sat there empty. */
-    setFocusComposer((n) => n + 1)
-    /* And put the cursor where the reply is written. Choosing Reply is
-       already the decision to type something; leaving the cursor where it was
-       makes clicking into the box a step the app asked for and then did not
-       take. */
+    /*
+     * Choosing to reply is choosing to write one.
+     *
+     * Reported: picking Reply left the cursor wherever it was and the reply
+     * box sat there empty, so clicking into it was a step the app asked for
+     * and then did not take.
+     *
+     * On a phone too, unlike opening a channel or adding a picture. Those are
+     * things somebody did for another reason and a keyboard over them is in
+     * the way; this one is the decision to type, so the keyboard is what was
+     * asked for.
+     *
+     * Asked once. This was written twice, in two commits, each with its own
+     * comment saying the same thing - so every reply bumped the counter twice
+     * and focused the box twice.
+     */
     setFocusComposer((n) => n + 1)
   }
   const beginEdit = (m: Message) => {
@@ -3921,6 +3947,33 @@ function Conversation({
                   onPick: () => { void navigator.clipboard?.writeText(m.body) },
                 })
               }
+              /*
+               * The picture itself, onto the clipboard.
+               *
+               * The bitmap rather than a link. A link here is signed and
+               * stops working after a week, so "Copy image address" would
+               * hand somebody something that quietly dies - and making it not
+               * die means unexpiring public URLs, which is a decision about
+               * who can reach an upload rather than a menu item.
+               *
+               * Offered for one picture, because "copy" with several is a
+               * question rather than an action. GIFs are drawn as video and
+               * copy as their first frame, so they are left out.
+               */
+              const picture = (m.attachments ?? []).filter(
+                (a) => a.mime?.startsWith('image/') && !a.is_gif)
+              if (picture.length === 1 && canCopyPictures()) {
+                items.push({
+                  kind: 'item', label: 'Copy image', icon: 'img',
+                  onPick: () => {
+                    void copyPicture(picture[0]!.path).then((ok) => {
+                      /* Said either way. A menu that closes and does nothing
+                         is indistinguishable from one that worked. */
+                      toast(ok ? 'Copied' : 'That would not copy')
+                    })
+                  },
+                })
+              }
               if (actions.includes('edit')) {
                 items.push({
                   kind: 'item', label: 'Edit', icon: 'pencil',
@@ -3999,7 +4052,14 @@ function Conversation({
         kind={kind}
         onTyping={iAmTyping}
         pending={up.pending}
-        onPick={(f) => void up.add(f)}
+        onPick={(f) => {
+          void up.add(f)
+          /* The same as a drop, phone included: choosing a picture leaves
+             focus on the button that opened the picker, so Enter had nowhere
+             to land there either - and on a phone there is no Enter to land,
+             only a keyboard over the preview. */
+          if (!phone) setFocusComposer((n) => n + 1)
+        }}
         onDrop={up.remove}
         uploadError={up.error}
         server={server}

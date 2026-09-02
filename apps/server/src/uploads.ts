@@ -25,8 +25,20 @@ function referenced(): Set<string> {
   const add = (p: unknown) => {
     if (typeof p === 'string' && p) out.add(basename(p.split('?')[0]!))
   }
-  for (const r of db.prepare('SELECT path FROM attachments').all() as unknown as Array<{ path: string }>) {
+  /*
+   * Both columns, because a picture and its thumbnail are two files.
+   *
+   * thumb_path was missing here, which is the same fault the two comments
+   * below describe and the same one they were each written for: a file the
+   * database still points at, absent from this list, and deleted by the first
+   * sweep that ran. It did not bite only because an upload row also counts as
+   * a reason to keep a file, and every thumbnail has one - so the day
+   * anything forgets an upload row, the thumbnails would have gone with it.
+   */
+  for (const r of db.prepare('SELECT path, thumb_path FROM attachments').all() as unknown as
+    Array<{ path: string; thumb_path: string | null }>) {
     add(r.path)
+    add(r.thumb_path)
   }
   for (const r of db.prepare('SELECT avatar_path, banner_path FROM users').all() as unknown as
     Array<{ avatar_path: string | null; banner_path: string | null }>) {
@@ -157,32 +169,54 @@ export function sweepDeleted(olderThanMs: number): number {
 
 export function removeAttachmentsOf(messageId: string): void {
   const rows = db
-    .prepare('SELECT path FROM attachments WHERE message_id = ?')
-    .all(messageId) as unknown as Array<{ path: string }>
+    .prepare('SELECT path, thumb_path FROM attachments WHERE message_id = ?')
+    .all(messageId) as unknown as Array<{ path: string; thumb_path: string | null }>
 
-  for (const r of rows) {
-    /*
-     * Not if anybody else is still pointing at it.
-     *
-     * Two messages can share a file now that an imported GIF is stored under
-     * a name taken from its own contents - send the same one twice and the
-     * second send costs nothing. Which makes this the dangerous line in the
-     * program: deleting one of those messages used to take the file with it
-     * and leave the other one showing a hole, with no way back short of the
-     * nightly backup.
-     */
-    const shared = db
-      .prepare('SELECT 1 AS x FROM attachments WHERE path = ? AND message_id != ? LIMIT 1')
-      .get(r.path, messageId) as unknown as { x: number } | undefined
-    if (shared) continue
+  /*
+   * Not if anybody else is still pointing at it.
+   *
+   * Two messages can share a file now that an imported GIF is stored under a
+   * name taken from its own contents - send the same one twice and the second
+   * send costs nothing. Which makes this the dangerous check in the program:
+   * deleting one of those messages used to take the file with it and leave
+   * the other one showing a hole, with no way back short of the backup.
+   *
+   * Both columns are asked, because a file that is somebody's picture here
+   * can be somebody else's thumbnail there - the same bytes either way.
+   */
+  const stillWanted = (path: string): boolean => Boolean(db.prepare(
+    `SELECT 1 AS x FROM attachments
+      WHERE (path = ? OR thumb_path = ?) AND message_id != ? LIMIT 1`
+  ).get(path, path, messageId))
 
+  /** Take one file off the disk, and out of the record of who owns it. */
+  const remove = (path: string | null): void => {
+    if (!path) return
+    if (stillWanted(path)) return
     // Only ever a name we generated ourselves, but resolve and check anyway:
     // this deletes files, and a path from a table is still a path.
-    const name = basename(r.path)
+    const name = basename(path.split('?')[0]!)
     const full = resolve(config.uploadDir, name)
-    if (!full.startsWith(resolve(config.uploadDir))) continue
+    if (!full.startsWith(resolve(config.uploadDir))) return
     try { unlinkSync(full) } catch { /* already gone */ }
     forgetUpload(name)
+  }
+
+  for (const r of rows) {
+    remove(r.path)
+    /*
+     * And the small copy that was made of it.
+     *
+     * This only ever removed the picture, so every deleted picture left its
+     * thumbnail on the disk for good - a file nothing pointed at, which the
+     * sweep could not collect either, because an upload row is treated as a
+     * reason to keep a file. Measured on this machine before it was fixed:
+     * thirteen upload rows, 4.67MB, that nothing pointed at at all.
+     *
+     * A thumbnail is not a file somebody chose to keep. It is part of the
+     * picture, and it goes when the picture goes.
+     */
+    remove(r.thumb_path)
   }
 }
 

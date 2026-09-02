@@ -139,13 +139,17 @@ describe('the cursor', () => {
    * These checks used a window of so many characters either side, which broke
    * the moment the effect grew a comment - and a check that stops finding what
    * it is looking for reports the feature missing.
+   *
+   * Anchored on what this effect is *for* rather than on asking for the
+   * focus, which is no longer unique: dropping a picture asks for it too, so
+   * a search for the first one found a callback near the top of the file and
+   * reported three features missing at once.
    */
   const focusEffect = (() => {
-    const at = shell.indexOf('setFocusComposer((n) => n + 1)')
-    if (at < 0) return ''
-    const from = shell.lastIndexOf('useEffect(() => {', at)
-    const to = shell.indexOf('})', at)
-    return from < 0 || to < 0 ? '' : shell.slice(from, to + 2)
+    const ends = shell.indexOf('}, [openId, phone])')
+    if (ends < 0) return ''
+    const from = shell.lastIndexOf('useEffect(() => {', ends)
+    return from < 0 ? '' : shell.slice(from, ends + '}, [openId, phone])'.length)
   })()
 
   it('goes to the message box when something is opened', () => {
@@ -154,10 +158,53 @@ describe('the cursor', () => {
     expect(focusEffect).toContain('[openId, phone]')
   })
 
-  it('and when a reply is started', () => {
-    const at = shell.indexOf('setReplyTo({ id: m.id')
+  /*
+   * And adding a picture leaves a phone alone, for the same reason.
+   *
+   * Putting the cursor in the box is what lets Enter send a picture on its
+   * own - but a phone has no Enter waiting, and focusing there slides the
+   * keyboard up over the picture just added. The rule was written once for
+   * opening a channel and then not applied to the two places added later,
+   * which is how a considered decision quietly stops holding.
+   *
+   * Replying is deliberately not on this list: opening a channel and adding a
+   * picture are things somebody did for another reason, and a keyboard over
+   * them is in the way. Choosing Reply is the decision to type, so there the
+   * keyboard is the thing being asked for.
+   */
+  it('and so does adding a picture, by drop or by picker', () => {
+    for (const [what, anchor] of [
+      ['a drop', 'for (const f of files) void up.add(f)'],
+      ['the picker', 'onPick={(f) => {'],
+    ] as const) {
+      const at = shell.indexOf(anchor)
+      expect(at, `${what} is still here`).toBeGreaterThan(-1)
+      const block = shell.slice(at, at + 900)
+      const asks = block.indexOf('setFocusComposer')
+      expect(asks, `${what} does not ask for the cursor`).toBeGreaterThan(-1)
+      expect(block.slice(0, asks), `${what} asks for it on a phone too`)
+        .toMatch(/if \(!phone\) $/)
+    }
+  })
+
+  /* And once each. This was written twice for a reply, in two commits, each
+     with a comment saying the same thing - so every reply focused the box
+     twice and bumped the counter the effect keys on twice. */
+  it('and asks once per thing that wants it', () => {
+    const at = shell.indexOf('const beginReply =')
     expect(at).toBeGreaterThan(-1)
-    expect(shell.slice(at, at + 400), 'replying does not put the cursor in the box')
+    const body = shell.slice(at, shell.indexOf('const beginEdit =', at))
+    expect(body.split('setFocusComposer').length - 1).toBe(1)
+  })
+
+  /* Bounded by the function rather than by a count of characters: this read
+     400 either side and stopped finding the call the moment the comment above
+     it grew, which reports the feature missing. */
+  it('and when a reply is started', () => {
+    const at = shell.indexOf('const beginReply =')
+    expect(at, 'there is no beginReply any more').toBeGreaterThan(-1)
+    const body = shell.slice(at, shell.indexOf('const beginEdit =', at))
+    expect(body, 'replying does not put the cursor in the box')
       .toContain('setFocusComposer')
   })
 
