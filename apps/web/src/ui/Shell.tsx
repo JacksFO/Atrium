@@ -10,6 +10,7 @@ import { nameLook } from '../lib/nameStyle'
 import { nameIn, nicknameIn, spaceOfChannel } from '../lib/names'
 import { canCopyPictures, copyPicture } from '../lib/copyPicture'
 import { NewSince } from './NewSince'
+import { JumpDown } from './JumpDown'
 import { toast } from '../lib/toast'
 import { memberModerationFor } from '../lib/memberModeration'
 import type { Api } from '../lib/api'
@@ -3382,6 +3383,10 @@ function Conversation({
   const [shown, setShown] = useState(FIRST)
   useEffect(() => {
     openedAt.current = Date.now()
+    /* A different conversation is not a direction. Without this, opening a
+       channel that restores higher up than the last one left off reads as
+       somebody scrolling up, and the new channel starts off having let go. */
+    lastTop.current = 0
     setShown(FIRST)
     setMarkFrom(openId ? world.unread.get(openId) ?? null : null)
     setMarkSince(openId ? world.lastRead.get(openId) ?? null : null)
@@ -3484,6 +3489,63 @@ function Conversation({
    * that came back.
    */
   const wasAtBottom = useRef(true)
+  /*
+   * Two distances, because "near the end" is two different questions.
+   *
+   * FOLLOW is the forgiving one: coming back down, or a list growing under
+   * somebody who has not moved, counts as being at the end well before it is
+   * exact - a message that arrives while the last one is still settling must
+   * not be treated as somebody reading history.
+   *
+   * GLUED is the strict one, and it is only asked when somebody has
+   * deliberately gone up. One message is about sixty pixels, so a rule that
+   * called anything under 120 "at the end" dragged the reader back down off
+   * the very message they nudged up to re-read. Reported as clunky, measured
+   * at exactly that: sixty pixels up, and the next thing anybody said pulled
+   * them to the bottom.
+   *
+   * Not zero, because being pinned is not always pixel-exact - a row that has
+   * just finished growing can leave a few over, and stopping following for
+   * those would be the worse of the two faults.
+   */
+  const FOLLOW = 120
+  const GLUED = 24
+  /* Where the list was last time it moved, so the direction can be told from
+     the position. Every input the app has to cope with - a wheel, a finger,
+     Page Up, a hand on the scrollbar - arrives as this same event. */
+  const lastTop = useRef(0)
+  /*
+   * Whether the reader has let go of the end, as something the page can draw.
+   *
+   * The same fact as wasAtBottom, which is a ref because it is read inside
+   * scroll handlers many times a second and must never cause a render. This
+   * is set only when the answer changes, which is when somebody leaves the
+   * end or comes back to it - a handful of times in a session rather than on
+   * every scroll event.
+   */
+  const [away, setAway] = useState(false)
+  /* When they let go, so what arrived after it can be counted. A time rather
+     than a length: loading an older page prepends to the list, and counting
+     by length would report fifty new messages for fifty old ones. */
+  const awayAt = useRef(0)
+  /*
+   * How many have arrived since they let go.
+   *
+   * Counted from the newest backwards and stopped at the first one that is
+   * older, because the list is in order and what is being counted is a run at
+   * the end of it. That makes this the length of the run rather than the
+   * length of the list, so a channel with ten thousand loaded costs the same
+   * as one with ten.
+   */
+  const sinceAway = (() => {
+    if (!away) return 0
+    let n = 0
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if ((messages[i]?.created_at ?? 0) <= awayAt.current) break
+      n++
+    }
+    return n
+  })()
   const lastId = messages[messages.length - 1]?.id
   const lastMine = messages[messages.length - 1]?.author_id === world.me.id
 
@@ -3509,7 +3571,17 @@ function Conversation({
        has the one before it, or nothing at all, and the effect that opens a
        channel decides that case for itself. */
     if (el && el.scrollHeight > 0) {
-      wasAtBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120
+      /*
+       * The strict distance here, not the forgiving one.
+       *
+       * This runs before the new message is in the page, so what it measures
+       * is the list the reader is looking at right now - and somebody who is
+       * following is pinned to the end, within a pixel or two. Anything
+       * further is somebody who has gone up, and asking the forgiving
+       * question here would take hold of them again on every message and
+       * undo the letting go the scroll handler had just decided.
+       */
+      wasAtBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight <= GLUED
     }
   }
 
@@ -3825,6 +3897,11 @@ function Conversation({
           setMarkFrom(null)
         }}
       />
+      {/* The list and the way back to the end of it, in one box: the button
+          is placed against the bottom of the conversation rather than the
+          bottom of the pane, so it lands just above the composer whatever
+          height the composer happens to be. */}
+      <div className="streamwrap">
       <div
         className="stream"
         ref={stream}
@@ -3834,8 +3911,28 @@ function Conversation({
         onScroll={(e) => {
           const el = e.currentTarget
           const fromEnd = el.scrollHeight - el.scrollTop - el.clientHeight
-          wasAtBottom.current = fromEnd < 120
+          /*
+           * Which way they went decides which question this is.
+           *
+           * Going up is a decision, and it is made about the message they
+           * went up to look at rather than about a distance - so anything
+           * further than glued lets go, even the sixty pixels that is one
+           * message. Everything else is forgiving: coming back down, or the
+           * list growing under somebody who never moved, takes hold again
+           * anywhere near the end.
+           */
+          const wentUp = el.scrollTop < lastTop.current - 1
+          lastTop.current = el.scrollTop
+          wasAtBottom.current = wentUp ? fromEnd <= GLUED : fromEnd < FOLLOW
           if (openId) world.parked.set(openId, fromEnd)
+
+          /* Only on the change, so scrolling does not re-render the
+             conversation on every frame of it. */
+          const gone = !wasAtBottom.current
+          if (gone !== away) {
+            if (gone) awayAt.current = Date.now()
+            setAway(gone)
+          }
 
           /*
            * Reaching the end is having caught up, so the line saying what was
@@ -4047,6 +4144,21 @@ function Conversation({
             }}
           />
         )}
+      </div>
+      <JumpDown
+        show={away}
+        count={sinceAway}
+        onGo={() => {
+          const el = stream.current
+          if (!el) return
+          /* Taking hold again is part of pressing it: somebody who asked to
+             be at the end means to stay there. */
+          wasAtBottom.current = true
+          lastTop.current = el.scrollHeight
+          el.scrollTop = el.scrollHeight
+          setAway(false)
+        }}
+      />
       </div>
 
       {replyTo && (

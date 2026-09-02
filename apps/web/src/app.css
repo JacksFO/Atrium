@@ -1243,6 +1243,23 @@ body:has(.pgrip.on){cursor:ew-resize;user-select:none}
 .chd .tp{font-size:.85em;color:var(--dm);padding-left:12px;border-left:1px solid var(--edge);
   max-width:40ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .stream{flex:1;overflow-y:auto;padding:18px 24px 6px}
+/* The conversation and the way back to the end of it. The box is only here
+   to be something for that button to be positioned against, so it takes the
+   size the list used to take and passes it straight on. */
+.streamwrap{flex:1;min-height:0;display:flex;flex-direction:column;position:relative}
+/* Over the last line or two of the conversation, taking no clicks itself -
+   a transparent band that swallowed a press meant for a message would be
+   worse than not being there. */
+.jumpdown{position:absolute;left:0;right:0;bottom:8px;display:flex;
+  justify-content:center;pointer-events:none;z-index:2}
+.jumpdown-go{pointer-events:auto;display:flex;align-items:center;gap:7px;
+  padding:5px 12px;border-radius:999px;border:1px solid var(--edge);
+  background:var(--rz);color:var(--fg);font:inherit;font-size:.8em;font-weight:600;
+  cursor:pointer;box-shadow:0 4px 14px -4px rgba(0,0,0,.4);
+  -webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur)}
+.jumpdown-go:hover{background:var(--rz2)}
+/* The app's chevron, turned to point the way the button goes. */
+.jumpdown-go svg{transform:rotate(90deg)}
 /* Even above and below, and its own space rather than borrowing the lead
    margin of the message under it — a divider that sits closer to one side
    than the other reads as belonging to that side. */
