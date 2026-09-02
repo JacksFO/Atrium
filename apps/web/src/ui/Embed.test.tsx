@@ -101,6 +101,29 @@ describe("a preview card's picture", () => {
     expect(el.querySelector('button.emedia')).not.toBeNull()
   })
 
+  /*
+   * And says what it is.
+   *
+   * A button whose only content is a picture with no alt is announced as
+   * "button" and nothing else. An attached picture is named after its file;
+   * this one takes the name of the card it sits on, which is the sentence
+   * somebody just read above it.
+   */
+  it('and carries a name, the way an attached picture does', async () => {
+    const el = await card()
+    const picture = el.querySelector('.emedia img')!
+    expect(picture.getAttribute('alt')).toBe(CARD.title)
+  })
+
+  /* Including once it is open - the big one is the same picture. */
+  it('and keeps that name when it opens', async () => {
+    const el = await card()
+    press(el.querySelector('.emedia')!)
+    const big = document.querySelector('.lightbox img')
+    expect(big, 'nothing opened').not.toBeNull()
+    expect(big!.getAttribute('alt')).toBe(CARD.title)
+  })
+
   /* And does not take somebody off to the site instead. The card's link is
      its title, which is a different thing to press. */
   it('and does not carry a link of its own', async () => {

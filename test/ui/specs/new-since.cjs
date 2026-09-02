@@ -163,6 +163,55 @@ module.exports = {
     check('the channel list was long enough for this to mean anything',
       typeof count === 'number' && count > 1, count)
 
+    // --- and the time is when they were last here ------------------------
+    /*
+     * Not the time they opened it.
+     *
+     * Opening a channel while the window is watched marks it read, and the
+     * server answers with the moment it did so - so a bar reading that as it
+     * draws settles on "since <now>" a second after it appears and says
+     * nothing at all. The two are the same clock unless the message is left
+     * to age, which is why this waits for the minute to turn rather than
+     * asserting on a message that is seconds old.
+     */
+    await js(openChannel(1))
+    await wait(900)
+    const aged = await sayAs(js, friend.token, 'this one is left to get old')
+    check('a message can be left to age', aged.ok === true, aged.why ?? aged)
+
+    const postedIn = await js(`new Date().getMinutes()`)
+    const turned = await until('the clock to turn over',
+      `new Date().getMinutes() !== ${postedIn}`, 70000)
+    check('the minute turned, so then and now read differently', turned === true)
+
+    await js(openChannel(0))
+    await wait(1800)
+
+    const timed = await js(`(() => {
+      const bar = ${BAR}
+      if (!bar) return { there: false }
+      const now = new Date().toLocaleTimeString(undefined,
+        { hour: '2-digit', minute: '2-digit' })
+      return {
+        there: true,
+        text: (bar.textContent || '').replace(/\\s+/g, ' ').trim(),
+        now,
+      }
+    })()`)
+    console.log('      timed:    ' + JSON.stringify(timed))
+    check('the bar is up for the aged message', timed.there === true, timed)
+    check('and says a time', / since /.test(timed.text || ''), timed)
+    check('and it is not the moment the channel was opened',
+      !String(timed.text).includes(timed.now), timed)
+
+    /* Pressed, so the next block starts from nothing again. */
+    await js(`(() => {
+      const b = ${BAR} && ${BAR}.querySelector('.newsince-read')
+      if (b) b.click()
+      return true
+    })()`)
+    await wait(1500)
+
     // --- and scrolling does not shake it off, or shove the list about -----
     /*
      * A channel somebody cannot see the top of, which is the case the bar

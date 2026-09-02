@@ -139,8 +139,30 @@ describe('where it gets its numbers', () => {
     expect(shell).toContain('setMarkFrom(openId ? world.unread.get(openId) ?? null : null)')
   })
 
-  it('and asks when that channel was read, not the app', () => {
-    expect(used).toContain('world.lastRead.get(openId)')
+  /*
+   * Taken on the way in, with the count, and not read as it draws.
+   *
+   * Opening a channel while the window is watched marks it read, the server
+   * answers with the moment it did so, and the client keeps that - so a bar
+   * reading it live settled on the second somebody opened the channel and
+   * said "12 new messages since 17:42" about the 17:42 they were reading it
+   * at. The value it wants stops existing a moment after it is needed, which
+   * is exactly why it has to be captured rather than looked up.
+   */
+  it('and asks when that channel was read, not when it was opened', () => {
+    expect(used, 'read as it draws, so it says the time it was opened')
+      .not.toContain('world.lastRead.get(openId)')
+    expect(used).toContain('since={markSince}')
+    expect(shell).toContain('setMarkSince(openId ? world.lastRead.get(openId) ?? null : null)')
+  })
+
+  /* Beside the count, in the one effect that runs on the way in - not in a
+     second one that could run at a different moment. */
+  it('and takes it in the same breath as the count', () => {
+    const at = shell.indexOf('setMarkFrom(openId ? world.unread')
+    expect(at, 'the count is no longer captured on the way in').toBeGreaterThan(-1)
+    const next = shell.slice(at, shell.indexOf('}, [openId])', at))
+    expect(next, 'the time is captured somewhere else').toContain('setMarkSince(')
   })
 
   /* One channel. readFrame takes a channel id, and there is a separate

@@ -3353,6 +3353,17 @@ function Conversation({
    */
   const [markFrom, setMarkFrom] = useState<number | null>(null)
   /*
+   * When this conversation was last read, taken on the way in with the count.
+   *
+   * Read live, this was always "a moment ago": opening a channel while the
+   * window is watched marks it read, the server answers with the time it did
+   * so, and the client keeps that - so the bar settled on the second somebody
+   * opened it and said "12 new messages since 17:42" about the 17:42 they
+   * were reading it at. The honest answer is when they were last here, and
+   * that value only exists until the read lands.
+   */
+  const [markSince, setMarkSince] = useState<number | null>(null)
+  /*
    * When this conversation was opened, so the line is not cleared by the app
    * scrolling rather than by the reader.
    *
@@ -3373,6 +3384,7 @@ function Conversation({
     openedAt.current = Date.now()
     setShown(FIRST)
     setMarkFrom(openId ? world.unread.get(openId) ?? null : null)
+    setMarkSince(openId ? world.lastRead.get(openId) ?? null : null)
   /* eslint-disable-next-line react-hooks/exhaustive-deps -- on the way in
      and no other time. Following the count would move the line every time
      something arrived or was marked read, which is the one thing it must
@@ -3783,7 +3795,7 @@ function Conversation({
         */}
       <NewSince
         count={markFrom ?? 0}
-        since={openId ? world.lastRead.get(openId) ?? null : null}
+        since={markSince}
         onGo={() => {
           const el = stream.current
           if (!el) return

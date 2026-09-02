@@ -75,7 +75,7 @@ function BareImage({ server, url }: { server: Api; url: string }) {
  * not, so the card leaked exactly what the fetch avoided. A card with no
  * picture is still a card, so a failure here simply draws nothing.
  */
-function CardImage({ server, url }: { server: Api; url: string }) {
+function CardImage({ server, url, title }: { server: Api; url: string; title: string }) {
   const [big, setBig] = useState(false)
   const { src, failed } = useProxiedImage(server, url)
   if (failed || !src) return null
@@ -97,9 +97,14 @@ function CardImage({ server, url }: { server: Api; url: string }) {
         * the site to find it.
         */}
       <button className="emedia" onClick={() => setBig(true)}>
-        <img src={src} alt="" loading="lazy" />
+        {/* Named after the card it is on, the way an attached picture is
+            named after its file - a button whose only content is a picture
+            with no alt is announced as "button" and nothing else. Empty when
+            the card had no title, which is the correct alt for a picture
+            that is decoration beside words somebody has already heard. */}
+        <img src={src} alt={title} loading="lazy" />
       </button>
-      {big && <Lightbox src={src} alt="" onClose={() => setBig(false)} />}
+      {big && <Lightbox src={src} alt={title} onClose={() => setBig(false)} />}
     </>
   )
 }
@@ -167,7 +172,7 @@ function Card({ server, url }: { server: Api; url: string }) {
           />
         </div>
       ) : preview.image ? (
-        <CardImage server={server} url={preview.image} />
+        <CardImage server={server} url={preview.image} title={preview.title} />
       ) : null}
     </div>
   )
