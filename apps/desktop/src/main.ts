@@ -12,7 +12,8 @@ import { autoUpdater } from 'electron-updater'
 import { matchGame } from './matchgame.js'
 import { movedDeliberately } from './seek.js'
 import {
-  asked, cameBack, NOT_HUNG, shouldAsk, stuckFor, whatDied, wentQuiet, type Hang,
+  asked, cameBack, NOT_HUNG, shouldAsk, shouldReload, stuckFor, whatDied, wentQuiet,
+  worthReloading, type Hang,
 } from './hang.js'
 import { noteTrouble } from './troubleLog.js'
 import {
@@ -200,6 +201,25 @@ let quitting = false
 
 /** Where the page has got to, if it has stopped answering. */
 let hang: Hang = NOT_HUNG
+
+/**
+ * Whether the box asking about it is on screen.
+ *
+ * Electron repeats "unresponsive" for as long as a page is stuck, and the
+ * time this was written down was the moment of *asking* rather than the
+ * moment of answering - so leaving the box open for longer than the gap
+ * between asks opened a second one on top of it, and then a third. Which is
+ * exactly the thing the comment beside that gap says it exists to prevent.
+ */
+let asking = false
+
+/**
+ * When the window was last brought back by itself.
+ *
+ * A page that dies on the way up dies again the moment it is reloaded, and
+ * nothing here would have stopped that going round for ever.
+ */
+let reloads: number[] = []
 
 /**
  * A small file of what went wrong, so the next freeze can be read about.
@@ -527,6 +547,9 @@ function createWindow(): void {
 
     const target = win
     if (!target || target.isDestroyed()) return
+    /* One box at a time. See `asking`. */
+    if (asking) return
+    asking = true
     /*
      * Asked rather than decided. Reloading throws away whatever was half
      * typed, and a page that is merely slow is often about to come back -
@@ -543,10 +566,18 @@ function createWindow(): void {
       detail: `It has not answered for ${how}. Waiting often works. Reloading `
         + 'starts the window again and loses anything half-typed.',
     }).then((answer) => {
+      asking = false
       if (answer.response !== 1) return
       noteToLog('reload', 'asked for by the person watching it')
+      /* Asked for by hand, so no cap: somebody pressing the button is not a
+         loop, and refusing them because the page has crashed twice already is
+         the app arguing with the person trying to fix it. */
+      reloads = [...reloads, Date.now()]
       if (win && !win.isDestroyed()) win.webContents.reload()
-    }).catch(() => { /* the window went while the box was open */ })
+    }).catch(() => {
+      /* The window went while the box was open. */
+      asking = false
+    })
   })
 
   /* And it came back on its own, which is the common ending. */
@@ -2178,6 +2209,26 @@ app.whenReady().then(() => {
 app.on('render-process-gone', (_e, _contents, details) => {
   noteToLog('render-process-gone', `${details.reason} (exit ${details.exitCode})`)
   hang = cameBack()
+  asking = false
+
+  /*
+   * A clean exit is the page being closed on purpose, which is what happens
+   * on every quit - and reloading the window then is an app coming back from
+   * the dead as it is being shut down.
+   */
+  if (!worthReloading(String(details.reason), quitting)) return
+
+  /*
+   * And not round and round. A page that dies on the way up dies again the
+   * moment it is reloaded; after a few goes the honest thing is to stop and
+   * leave what is on screen, which at least stays still long enough to read.
+   */
+  const now = Date.now()
+  if (!shouldReload(reloads, now)) {
+    noteToLog('gave-up', 'the window died again straight after being brought back')
+    return
+  }
+  reloads = [...reloads, now]
   if (win && !win.isDestroyed()) win.webContents.reload()
 })
 

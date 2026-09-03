@@ -194,13 +194,20 @@ export async function fetchRemoteImage(raw: string): Promise<Fetched> {
     })
 
     if (res.status >= 300 && res.status < 400) {
+      /* Let go of the hop before starting the next one. A body nobody reads
+         holds its socket open until something times it out - which fetch hid
+         and node:https does not. */
+      void res.body?.cancel().catch(() => {})
       const next = res.headers.get('location')
       if (!next) throw new Error('that link redirects nowhere')
       url = new URL(next, url)
       continue
     }
 
-    if (!res.ok || !res.body) throw new Error(`that image could not be fetched (${res.status})`)
+    if (!res.ok || !res.body) {
+      void res.body?.cancel().catch(() => {})
+      throw new Error(`that image could not be fetched (${res.status})`)
+    }
 
     const type = (res.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase()
     if (!ALLOWED_TYPES.has(type)) {
@@ -429,6 +436,8 @@ export async function fetchPreview(raw: string): Promise<Preview | null> {
       accept: 'text/html,application/xhtml+xml',
     })
     if (r.status >= 300 && r.status < 400) {
+      /* The same: a hop nobody reads still holds a socket. */
+      void r.body?.cancel().catch(() => {})
       const next = r.headers.get('location')
       if (!next) return null
       url = new URL(next, url)
@@ -440,7 +449,10 @@ export async function fetchPreview(raw: string): Promise<Preview | null> {
   if (!res || !res.ok || !res.body) return null
 
   const type = (res.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase()
-  if (!type.startsWith('text/html') && type !== 'application/xhtml+xml') return null
+  if (!type.startsWith('text/html') && type !== 'application/xhtml+xml') {
+    void res.body?.cancel().catch(() => {})
+    return null
+  }
 
   // Read the head and stop. Nothing below it is used.
   const reader = res.body.getReader()

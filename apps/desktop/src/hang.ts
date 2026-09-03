@@ -135,3 +135,49 @@ export function whatDied(kind: string, reason: string): string {
   }
   return `A ${kind} process stopped (${reason}).`
 }
+
+/**
+ * How many times it is worth bringing the window back by itself.
+ *
+ * A page that dies once is an accident and reloading it is the right answer.
+ * A page that dies on the way up - a bad build, a corrupt cache, running out
+ * of memory while it starts - dies again the moment it is reloaded, and an
+ * app that answers that by reloading forever is a machine-heater that also
+ * writes to disk on every turn. After a few goes the honest thing is to stop
+ * and leave what is on screen, which at least stays still long enough to be
+ * read.
+ */
+export const RELOAD_CAP = 3
+export const RELOAD_WINDOW_MS = 60_000
+
+/** The reloads still worth counting, oldest dropped. */
+export function recentReloads(
+  had: readonly number[], now: number, window = RELOAD_WINDOW_MS,
+): number[] {
+  return had.filter((at) => now - at < window)
+}
+
+/**
+ * Whether to bring it back again.
+ *
+ * Counted over a window rather than for ever: three crashes in a minute is a
+ * loop, and three over an afternoon is three separate bad moments, each of
+ * which deserves the window back.
+ */
+export function shouldReload(
+  had: readonly number[], now: number, cap = RELOAD_CAP, window = RELOAD_WINDOW_MS,
+): boolean {
+  return recentReloads(had, now, window).length < cap
+}
+
+/**
+ * Whether a dead renderer is worth reacting to at all.
+ *
+ * A clean exit is the page being closed on purpose - which is what happens
+ * every time the app quits, and reloading the window on the way out is how
+ * an app comes back from the dead as it is being shut down.
+ */
+export function worthReloading(reason: string, quitting: boolean): boolean {
+  if (quitting) return false
+  return reason !== 'clean-exit'
+}

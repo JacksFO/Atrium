@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
-  ASK_AGAIN_MS, asked, cameBack, HANG_GRACE_MS, logLine, NOT_HUNG, shouldAsk,
-  stuckFor, trimmed, whatDied, wentQuiet,
+  ASK_AGAIN_MS, asked, cameBack, HANG_GRACE_MS, logLine, NOT_HUNG, recentReloads,
+  RELOAD_CAP, RELOAD_WINDOW_MS, shouldAsk, shouldReload, stuckFor, trimmed, whatDied,
+  wentQuiet, worthReloading,
 } from './hang.js'
 
 /**
@@ -156,5 +157,65 @@ describe('what died', () => {
 
   it('and says plainly what else it was', () => {
     expect(whatDied('Utility', 'killed')).toContain('Utility')
+  })
+})
+
+/**
+ * And bringing the window back without doing it forever.
+ *
+ * A page that dies once is an accident, and reloading it is right. A page
+ * that dies on the way up dies again the moment it is reloaded - so an app
+ * that answers that by reloading is a loop that heats the machine and writes
+ * to disk on every turn. This is the thing that exists to explain a bad
+ * moment, so it must not be able to cause one.
+ */
+describe('bringing it back', () => {
+  it('is worth doing the first few times', () => {
+    let had: number[] = []
+    for (let i = 0; i < RELOAD_CAP; i++) {
+      expect(shouldReload(had, T + i * 1000)).toBe(true)
+      had = [...had, T + i * 1000]
+    }
+  })
+
+  it('and stops once it is plainly a loop', () => {
+    const had = Array.from({ length: RELOAD_CAP }, (_, i) => T + i * 1000)
+    expect(shouldReload(had, T + 4000), 'it would reload for ever').toBe(false)
+  })
+
+  /*
+   * Counted over a window rather than for ever. Three crashes in a minute is
+   * a loop; three across an afternoon is three separate bad moments, and each
+   * of those deserves the window back.
+   */
+  it('but starts again once the loop is well behind it', () => {
+    const had = Array.from({ length: RELOAD_CAP }, (_, i) => T + i * 1000)
+    expect(shouldReload(had, T + RELOAD_WINDOW_MS + 5000)).toBe(true)
+  })
+
+  it('and forgets the ones outside the window', () => {
+    const had = [T, T + RELOAD_WINDOW_MS + 1000]
+    expect(recentReloads(had, T + RELOAD_WINDOW_MS + 2000)).toHaveLength(1)
+  })
+})
+
+describe('a renderer that went on purpose', () => {
+  /*
+   * The one that would be felt every time. A clean exit is the page being
+   * closed deliberately, which happens on every quit - and reloading the
+   * window then is an app coming back from the dead as it is shut down.
+   */
+  it('is not brought back', () => {
+    expect(worthReloading('clean-exit', false)).toBe(false)
+  })
+
+  it('and nothing is, while the app is quitting', () => {
+    expect(worthReloading('crashed', true)).toBe(false)
+    expect(worthReloading('oom', true)).toBe(false)
+  })
+
+  it('but a crash is', () => {
+    expect(worthReloading('crashed', false)).toBe(true)
+    expect(worthReloading('oom', false)).toBe(true)
   })
 })
