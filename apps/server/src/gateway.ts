@@ -12,7 +12,7 @@ import { timedOutUntil } from './db.js'
 import {
   canAccessChannel, accessibleChannelIds, canBeInVoice, channelPermissionsFor, setVoicePlacement,
 } from './access.js'
-import { mentionedBy, recordMentions, unreadMentionChannels } from './mentions.js'
+import { mentionedBy, recordMentions, unreadBroadcastChannels, unreadMentionChannels } from './mentions.js'
 import { cleanActivities, type Activity } from './activity.js'
 import { allow } from './ratelimit.js'
 
@@ -1835,6 +1835,9 @@ export function attachGateway(server: Server): void {
            * already stored are covered too.
            */
           mentionChannels: unreadMentionChannels(user.id).filter(isMine),
+          /* And the ones where only the wide word named them, which the badge
+             treats differently where somebody has turned it off. */
+          everyoneChannels: unreadBroadcastChannels(user.id).filter(isMine),
           /*
            * Channels holding a pin this person has not looked at.
            *

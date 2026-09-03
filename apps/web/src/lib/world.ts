@@ -1,5 +1,5 @@
 import { Held } from './held'
-import { namesMe } from './named'
+import { namedHow } from './named'
 import { Presences } from './presence'
 import type { DmSummary, Friend } from './load'
 import type { Activity,
@@ -123,6 +123,16 @@ export type World = {
    * you will look at now.
    */
   mentioned: Set<Id>
+  /**
+   * And the channels where the only thing naming you is @everyone or @here.
+   *
+   * Apart from the set above because a server can have broadcasts turned off,
+   * and "am I named here" then has two answers: one for a message about me
+   * and one for a message about everybody. Folded together, suppressing
+   * @everyone silenced the sound and left the badge - the two halves of one
+   * setting disagreeing.
+   */
+  mentionedWidely: Set<Id>
   /** The servers whose members and roles have been fetched. */
   loaded: Set<Id>
   /**
@@ -193,7 +203,7 @@ export function emptyWorld(me: User): World {
     lastRead: new Map(),
     parked: new Map(),
     invitesAt: 0,
-    mentioned: new Set(),
+    mentioned: new Set(), mentionedWidely: new Set(),
     muted: new Set(),
     prefs: new Map(), spacePrefs: new Map(),
     membersBySpace: new Map(),
@@ -285,6 +295,10 @@ export function applyReady(w: World, f: ReadyFrame): World {
       .map((r) => [r.channel_id, Number(r.last_read_at) || 0]),
   )
   w.mentioned = new Set(f.mentionChannels ?? [])
+  /* Whole, suppressed servers included. Whether a broadcast counts is asked
+     where the badge is drawn, so turning the setting back on brings them back
+     without a reload. */
+  w.mentionedWidely = new Set(f.everyoneChannels ?? [])
   return w
 }
 
@@ -413,8 +427,13 @@ export function apply(w: World, e: ServerEvent): Effect {
         /* Not from somebody who has been blocked. Their message is hidden
            where it was said, so a red dot pointing at it is the app asking
            you to go and read a thing it has just refused to show you. */
-        if (!w.blocked.has(e.message.author_id) && namesMe(e.message.body, w)) {
-          w.mentioned.add(e.message.channel_id)
+        if (!w.blocked.has(e.message.author_id)) {
+          /* Split, because suppressing @everyone has to reach the badge as
+             well as the sound - and it cannot, if the only record is "named
+             somehow". */
+          const how = namedHow(e.message.body, w)
+          if (how.me) w.mentioned.add(e.message.channel_id)
+          else if (how.everyone) w.mentionedWidely.add(e.message.channel_id)
         }
       }
       return NOTHING
@@ -457,6 +476,7 @@ export function apply(w: World, e: ServerEvent): Effect {
     case 'read':
       w.unread.delete(e.channelId)
       w.mentioned.delete(e.channelId)
+      w.mentionedWidely.delete(e.channelId)
       /*
        * And when it was read, which the server says here and this threw
        * away.

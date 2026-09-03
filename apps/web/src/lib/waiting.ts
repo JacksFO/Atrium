@@ -1,5 +1,6 @@
 import type { Conversation } from './dms'
 import { quietIn } from './notifyLevel'
+import { isNamed } from './named'
 import type { Id } from './wire'
 import type { World } from './world'
 
@@ -58,7 +59,7 @@ export function whatWaits(
     /* Asked of the channel and the server it is in, rather than of a set of
        muted channel ids - a server somebody has muted has to stop counting
        here too, and its channels are not in that set. */
-    if (quietIn(id, channel?.space_id ?? null, w.prefs, w.spacePrefs, Date.now(), w.mentioned.has(id))) continue
+    if (quietIn(id, channel?.space_id ?? null, w.prefs, w.spacePrefs, Date.now(), isNamed(w, id, channel?.space_id))) continue
     /* A channel this client has not heard of - one somebody was removed from,
        or a conversation not fetched yet. Naming it "somewhere" would be worse
        than leaving it out. */
@@ -70,7 +71,7 @@ export function whatWaits(
       space: dm ? null : spaceById.get(channel!.space_id ?? '') ?? null,
       kind: dm ? 'dm' : 'channel',
       count,
-      named: w.mentioned.has(id),
+      named: isNamed(w, id, channel?.space_id),
       at: w.lastAt.get(id) ?? 0,
     })
   }

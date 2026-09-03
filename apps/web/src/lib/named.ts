@@ -1,3 +1,4 @@
+import type { Id } from './wire'
 import type { World } from './world'
 
 /**
@@ -69,4 +70,22 @@ export function namedHow(body: string, w: World): { me: boolean; everyone: boole
      list, which survives a rename and is what most of them are. */
   const byId = body.includes(`<@${w.me.id}>`)
   return { me: byId || has(tokens), everyone: has(wide) }
+}
+
+/**
+ * Whether anything waiting in a channel names you, either way.
+ *
+ * Two sets, because being named personally and being caught by an @everyone
+ * are different things: a server can have broadcasts turned off, and then a
+ * message about everybody is not a message about you. Folded into one,
+ * suppressing them silenced the sound and left the badge exactly where it
+ * was - the same half-applied setting, for the third time.
+ *
+ * Asked here rather than filtered when the list arrives, so turning the
+ * setting back on brings the badges back without a reload.
+ */
+export function isNamed(w: World, channelId: string, spaceId?: Id | null): boolean {
+  if (w.mentioned.has(channelId)) return true
+  if (!w.mentionedWidely.has(channelId)) return false
+  return !(spaceId && w.spacePrefs.get(spaceId)?.suppressEveryone)
 }

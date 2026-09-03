@@ -1,5 +1,6 @@
 import type { Conversation } from './dms'
 import { quietIn } from './notifyLevel'
+import { isNamed } from './named'
 import type { Id, Space } from './wire'
 import type { World } from './world'
 
@@ -33,7 +34,7 @@ export function waitingHere(
       /* Asked of the channel and the server together, so a mute behaves the
          same way whichever of the two it was set on - which it did not while
          this asked a set that only ever held channel ids. */
-      if (quietIn(c.id, space.id, w.prefs, w.spacePrefs, now, w.mentioned.has(c.id))) continue
+      if (quietIn(c.id, space.id, w.prefs, w.spacePrefs, now, isNamed(w, c.id, space.id))) continue
       if ((w.unread.get(c.id) ?? 0) > 0) out.push(c.id)
     }
     return out
@@ -41,7 +42,7 @@ export function waitingHere(
   for (const c of chats) {
     /* A conversation belongs to the people in it, so there is no server
        above it to ask about. */
-    if (quietIn(c.id, null, w.prefs, w.spacePrefs, Date.now(), w.mentioned.has(c.id))) continue
+    if (quietIn(c.id, null, w.prefs, w.spacePrefs, Date.now(), isNamed(w, c.id, null))) continue
     if ((w.unread.get(c.id) ?? 0) > 0) out.push(c.id)
   }
   return out

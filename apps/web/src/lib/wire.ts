@@ -374,6 +374,15 @@ export type ReadyFrame = {
    */
   mentionChannels?: Id[]
   /**
+   * And the ones where the only thing naming you is @everyone or @here.
+   *
+   * Sent apart so a server with broadcasts turned off can be quiet to the
+   * eyes as well as to the ears. Sent whole rather than filtered here: the
+   * setting can be turned back on, and a list filtered when you connected
+   * would leave the badges missing until a reload.
+   */
+  everyoneChannels?: Id[]
+  /**
    * What somebody has said about particular channels.
    *
    * `channelId`, `level` and `mutedUntil` — this said `channel_id` and

@@ -51,6 +51,9 @@ const gateway = (token) => new Promise((resolve, reject) => {
     /** What the opening frame carried. */
     opening: () => ready,
     heard: (t) => heard.filter((m) => m.t === t),
+    say: (channelId, body) => ws.send(JSON.stringify({
+      t: 'send', channelId, body, nonce: Math.random().toString(36).slice(2),
+    })),
     quit: () => ws.close(),
   }
   setTimeout(() => reject(new Error('the gateway never said ready')), 12000)
@@ -160,6 +163,38 @@ const run = async () => {
   })
   check('nor can somebody signed in as nobody', anonymous.status === 401, anonymous.status)
 
+  // --- and the opening frame carries where you were named -------------------
+  /*
+   * Two lists, because being named personally and being caught by an
+   * @everyone are different things and this setting can turn the second one
+   * off. Over the wire because both of the ways this can break are here: the
+   * field not reaching the client at all, and the query behind it throwing -
+   * which happens while the opening frame is being built, so it does not
+   * break a badge, it stops anybody connecting at all.
+   */
+  const invite = (await call(`/api/spaces/${space.id}/invites`, {
+    method: 'POST',
+  }, me.token)).body
+  const friend = await reg('spfriend', invite?.code)
+  check('somebody else can join the server', !!friend.token, invite?.code)
+
+  const room = (await call('/api/channels', {
+    method: 'POST', body: JSON.stringify({ name: 'general', kind: 'text', spaceId: space.id }),
+  }, me.token)).body?.channel
+  check('and a channel can be made', !!room?.id, room?.name)
+
+  windowOne.say(room.id, '@everyone hello')
+  windowOne.say(room.id, `hello @${friend.username}`)
+  await wait(900)
+
+  const theirWindow = await gateway(friend.token)
+  const frame = theirWindow.opening()
+  check('the opening frame says where something named you',
+    (frame?.mentionChannels ?? []).includes(room.id), frame?.mentionChannels)
+  check('and separately where an @everyone caught you',
+    (frame?.everyoneChannels ?? []).includes(room.id), frame?.everyoneChannels)
+
+  theirWindow.quit()
   windowOne.quit(); windowTwo.quit(); later.quit()
   console.log(bad === 0 ? '\n  all server preference checks passed' : `\n  ${bad} failed`)
   process.exit(bad === 0 ? 0 : 1)

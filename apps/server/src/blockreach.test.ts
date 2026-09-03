@@ -47,7 +47,7 @@ describe('a mention from somebody blocked', () => {
   it('does not put a dot on the channel', () => {
     const me = user(), them = user()
     const where = channel()
-    recordMentions(said(where, them), where, [me])
+    recordMentions(said(where, them), where, { named: [me], wideOnly: [] })
 
     /* The precondition, asserted rather than assumed: without the block it
        is there, so the test cannot pass because nothing was recorded. */
@@ -62,8 +62,8 @@ describe('a mention from somebody blocked', () => {
   it('while somebody else naming you in the same channel still does', () => {
     const me = user(), them = user(), sam = user()
     const where = channel()
-    recordMentions(said(where, them), where, [me])
-    recordMentions(said(where, sam), where, [me])
+    recordMentions(said(where, them), where, { named: [me], wideOnly: [] })
+    recordMentions(said(where, sam), where, { named: [me], wideOnly: [] })
 
     blockUser(me, them)
     expect(unreadMentionChannels(me)).toContain(where)

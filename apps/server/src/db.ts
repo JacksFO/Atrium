@@ -649,6 +649,15 @@ db.exec(
  * looked at the pins of a channel that has some has not seen them.
  */
 addColumn('channel_prefs', 'pins_seen_at', 'INTEGER')
+
+/*
+ * How somebody was reached, not merely that they were.
+ *
+ * @everyone and a message about you are different things, and a server can
+ * have broadcasts turned off - so without this, suppressing them silenced
+ * the sound and left the badge exactly where it was.
+ */
+addColumn('mentions', 'by_everyone', 'INTEGER NOT NULL DEFAULT 0')
 /*
  * A picture across the top of a server's channel list.
  *
