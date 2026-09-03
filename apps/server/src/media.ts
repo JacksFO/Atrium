@@ -1,5 +1,7 @@
 import { lookup } from 'node:dns/promises'
 import { isIP } from 'node:net'
+import { request as httpsRequest } from 'node:https'
+import { Readable } from 'node:stream'
 
 /**
  * The media proxy.
@@ -55,14 +57,25 @@ function isPrivateAddress(ip: string): boolean {
   return true
 }
 
-/** Reject anything that does not resolve to a public address. */
-async function assertPublic(hostname: string): Promise<void> {
+/**
+ * Reject anything that does not resolve to a public address, and hand back
+ * the address that was checked.
+ *
+ * Handing it back is the whole point. Checking the name and then letting
+ * fetch resolve it again leaves a gap between the two: a domain whose DNS
+ * answers with a public address the first time and a private one a moment
+ * later walks straight through a check that happened, correctly, on a
+ * different answer. It is the standard way past this, it needs nothing but a
+ * domain somebody controls and a short TTL, and the only fix is to connect to
+ * the address that was actually checked.
+ */
+async function assertPublic(hostname: string): Promise<{ address: string; family: number }> {
   // A literal address skips DNS entirely, so check it directly.
   if (isIP(hostname)) {
     if (isPrivateAddress(hostname)) throw new Error('that address is not reachable')
-    return
+    return { address: hostname, family: isIP(hostname) }
   }
-  let addresses: Array<{ address: string }>
+  let addresses: Array<{ address: string; family: number }>
   try {
     addresses = await lookup(hostname, { all: true })
   } catch {
@@ -74,6 +87,78 @@ async function assertPublic(hostname: string): Promise<void> {
   for (const a of addresses) {
     if (isPrivateAddress(a.address)) throw new Error('that address is not reachable')
   }
+  /* The first, and it is the one the connection will use - not merely the one
+     that happened to be checked. */
+  return { address: addresses[0]!.address, family: addresses[0]!.family }
+}
+
+/** Enough of a Response for the two things here that read one. */
+type Answer = {
+  ok: boolean
+  status: number
+  headers: { get: (name: string) => string | null }
+  body: ReadableStream<Uint8Array> | null
+}
+
+/**
+ * One request, to an address that has already been checked.
+ *
+ * node:https rather than fetch, for one reason: it takes a `lookup`, and that
+ * is the only way to say "connect to this address" while still speaking TLS
+ * to the hostname. Rewriting the URL to the address instead would connect to
+ * the right machine and then fail to verify the certificate, which is the
+ * same as having no certificate check at all.
+ *
+ * Redirects are not followed here. Each hop is checked on the way in by the
+ * caller, which is what stops a public address redirecting to a private one.
+ */
+function getPinned(
+  url: URL, at: { address: string; family: number }, headers: Record<string, string>,
+): Promise<Answer> {
+  return new Promise((resolve, reject) => {
+    const req = httpsRequest(url, {
+      headers,
+      /*
+       * Called instead of DNS. The address is the one assertPublic checked a
+       * moment ago, so there is no second answer for anybody to swap.
+       *
+       * Two shapes, and both have to be answered. Node asks with `all` set
+       * when it is willing to try several addresses, and then the callback
+       * takes an array rather than an address and a family - answer that one
+       * in the single-address shape and it reads the array as an address and
+       * fails with "Invalid IP address: undefined", which is what happened
+       * the first time this was run against a real site.
+       */
+      lookup: (_host, opts, cb) => {
+        const both = { address: at.address, family: at.family }
+        if ((opts as { all?: boolean }).all) {
+          (cb as unknown as (e: Error | null, a: Array<typeof both>) => void)(null, [both])
+          return
+        }
+        (cb as (e: Error | null, a: string, f: number) => void)(null, at.address, at.family)
+      },
+      timeout: TIMEOUT_MS,
+      /* The hostname, for SNI and for the certificate check - which is what
+         makes connecting by address safe rather than merely direct. */
+      servername: url.hostname,
+    }, (res) => {
+      const status = res.statusCode ?? 0
+      resolve({
+        ok: status >= 200 && status < 300,
+        status,
+        headers: {
+          get: (name: string) => {
+            const v = res.headers[name.toLowerCase()]
+            return Array.isArray(v) ? v[0] ?? null : v ?? null
+          },
+        },
+        body: Readable.toWeb(res) as ReadableStream<Uint8Array>,
+      })
+    })
+    req.on('timeout', () => { req.destroy(new Error('that link took too long')) })
+    req.on('error', reject)
+    req.end()
+  })
 }
 
 export type Fetched = {
@@ -98,16 +183,14 @@ export async function fetchRemoteImage(raw: string): Promise<Fetched> {
 
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     if (url.protocol !== 'https:') throw new Error('only https images can be shown')
-    await assertPublic(url.hostname)
+    /* The address is kept and connected to, rather than the name being
+       resolved a second time by whatever does the fetching. */
+    const at = await assertPublic(url.hostname)
 
-    const res = await fetch(url, {
-      redirect: 'manual',
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-      headers: {
-        // Some hosts serve nothing without one, and it identifies us honestly.
-        'user-agent': 'Atrium/1.0 (+media proxy)',
-        accept: 'image/*',
-      },
+    const res = await getPinned(url, at, {
+      // Some hosts serve nothing without one, and it identifies us honestly.
+      'user-agent': 'Atrium/1.0 (+media proxy)',
+      accept: 'image/*',
     })
 
     if (res.status >= 300 && res.status < 400) {
@@ -326,28 +409,24 @@ export async function fetchPreview(raw: string): Promise<Preview | null> {
   // Letting fetch follow them would check only the first address: a
   // public URL that redirects to 127.0.0.1 is the standard way past a
   // check that happens once.
-  let res: Response | null = null
+  let res: Answer | null = null
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     if (url.protocol !== 'https:') return null
-    await assertPublic(url.hostname)
+    const at = await assertPublic(url.hostname)
 
-    const r = await fetch(url, {
-      redirect: 'manual',
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-      headers: {
-        /**
-         * Shaped like a crawler, and still honest about who it is.
-         *
-         * Plenty of sites decide what to put in their meta tags by looking
-         * at this, and hand a name they do not recognise a stripped page.
-         * fxtwitter is the case that showed it up: to a known crawler it
-         * offers the video, and to "Atrium/1.0" it offered a title and
-         * nothing else - so a link to a video arrived as a box of text.
-         */
-        'user-agent':
-          'Mozilla/5.0 (compatible; AtriumBot/1.0; +https://github.com/JacksFO/Atrium)',
-        accept: 'text/html,application/xhtml+xml',
-      },
+    const r = await getPinned(url, at, {
+      /**
+       * Shaped like a crawler, and still honest about who it is.
+       *
+       * Plenty of sites decide what to put in their meta tags by looking
+       * at this, and hand a name they do not recognise a stripped page.
+       * fxtwitter is the case that showed it up: to a known crawler it
+       * offers the video, and to "Atrium/1.0" it offered a title and
+       * nothing else - so a link to a video arrived as a box of text.
+       */
+      'user-agent':
+        'Mozilla/5.0 (compatible; AtriumBot/1.0; +https://github.com/JacksFO/Atrium)',
+      accept: 'text/html,application/xhtml+xml',
     })
     if (r.status >= 300 && r.status < 400) {
       const next = r.headers.get('location')

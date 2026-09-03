@@ -1,6 +1,6 @@
 import {
   app, BrowserWindow, Tray, Menu, ipcMain, shell, protocol, net, clipboard,
-  globalShortcut, Notification, nativeImage, safeStorage,
+  globalShortcut, Notification, nativeImage, safeStorage, dialog,
   session, desktopCapturer, powerMonitor,
 } from 'electron'
 import {
@@ -11,6 +11,10 @@ import { createHash } from 'node:crypto'
 import { autoUpdater } from 'electron-updater'
 import { matchGame } from './matchgame.js'
 import { movedDeliberately } from './seek.js'
+import {
+  asked, cameBack, NOT_HUNG, shouldAsk, stuckFor, whatDied, wentQuiet, type Hang,
+} from './hang.js'
+import { noteTrouble } from './troubleLog.js'
 import {
   gotFor, iconFor, noIconYet, nothingYet, wantsIconRead, wantsRead, withIconRead, withRead,
   type Hunt, type IconHunt,
@@ -193,6 +197,21 @@ protocol.registerSchemesAsPrivileged([
 let win: BrowserWindow | null = null
 let tray: Tray | null = null
 let quitting = false
+
+/** Where the page has got to, if it has stopped answering. */
+let hang: Hang = NOT_HUNG
+
+/**
+ * A small file of what went wrong, so the next freeze can be read about.
+ *
+ * In userData rather than beside the app: the app's own folder is not
+ * writable once it is installed, and this has to work on the machine it
+ * happens on rather than on a developer's. troubleLog.ts does the writing and
+ * is tested against a real directory.
+ */
+function noteToLog(what: string, detail = ''): void {
+  noteTrouble(app.getPath('userData'), what, detail)
+}
 
 /*
  * Started by the login item rather than by a person.
@@ -489,6 +508,53 @@ function createWindow(): void {
 
   /* Both events, because a window leaves maximised as often as it enters. */
   const sayMaximised = () => win?.webContents.send('win:maximised', win.isMaximized())
+  /*
+   * When the app stops answering.
+   *
+   * Reported, with a screenshot of a window that would not take a click - and
+   * there was nothing to find afterwards, because nothing here listened for
+   * any of it. A freeze nobody can read about is one that gets guessed at.
+   *
+   * hang.ts holds every decision about time and repetition; this is the
+   * wiring, and it is short on purpose.
+   */
+  win.on('unresponsive', () => {
+    hang = wentQuiet(hang, Date.now())
+    if (!shouldAsk(hang, Date.now())) return
+    hang = asked(hang, Date.now())
+    const how = stuckFor(hang, Date.now())
+    noteToLog('unresponsive', `the window has not answered for ${how}`)
+
+    const target = win
+    if (!target || target.isDestroyed()) return
+    /*
+     * Asked rather than decided. Reloading throws away whatever was half
+     * typed, and a page that is merely slow is often about to come back -
+     * so the choice belongs to the person watching it, and Wait is the
+     * default because it is the one that loses nothing.
+     */
+    void dialog.showMessageBox(target, {
+      type: 'warning',
+      buttons: ['Wait', 'Reload'],
+      defaultId: 0,
+      cancelId: 0,
+      title: 'Atrium is not responding',
+      message: 'Atrium is not responding',
+      detail: `It has not answered for ${how}. Waiting often works. Reloading `
+        + 'starts the window again and loses anything half-typed.',
+    }).then((answer) => {
+      if (answer.response !== 1) return
+      noteToLog('reload', 'asked for by the person watching it')
+      if (win && !win.isDestroyed()) win.webContents.reload()
+    }).catch(() => { /* the window went while the box was open */ })
+  })
+
+  /* And it came back on its own, which is the common ending. */
+  win.on('responsive', () => {
+    if (hang.since > 0) noteToLog('responsive', `after ${stuckFor(hang, Date.now())}`)
+    hang = cameBack()
+  })
+
   win.on('maximize', sayMaximised)
   win.on('unmaximize', sayMaximised)
 
@@ -2099,6 +2165,31 @@ app.whenReady().then(() => {
     win?.on('focus', () => checkForUpdatesSoon())
     powerMonitor.on('resume', () => checkForUpdatesSoon())
   }
+})
+
+/*
+ * The page died, rather than stalled.
+ *
+ * Nothing is coming back: the window is left showing a picture of whatever
+ * was on screen when it went, which is the most confusing state an app can be
+ * in because it looks like it is working. Reloaded rather than asked about,
+ * since there is nothing to lose by then and nothing to wait for.
+ */
+app.on('render-process-gone', (_e, _contents, details) => {
+  noteToLog('render-process-gone', `${details.reason} (exit ${details.exitCode})`)
+  hang = cameBack()
+  if (win && !win.isDestroyed()) win.webContents.reload()
+})
+
+/*
+ * Something else died - most often the GPU, which is the commonest cause of a
+ * window that looks frozen and the one thing here somebody can act on.
+ *
+ * Not reloaded: Chromium brings its own children back, and a reload on top of
+ * that is a reload for something that fixed itself.
+ */
+app.on('child-process-gone', (_e, details) => {
+  noteToLog('child-process-gone', whatDied(String(details.type), String(details.reason)))
 })
 
 app.on('before-quit', () => { quitting = true })
