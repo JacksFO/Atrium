@@ -93,9 +93,22 @@ module.exports = {
       return { found: true, covered: false }
     } catch (e) { return { found: true, threw: String(e && e.message || e) } } })()`)
 
+    /*
+     * Waited for, not slept through.
+     *
+     * The panel fetches what it shows, so it is short when it opens and tall
+     * a moment later - and it is placed by measuring itself. A fixed sleep
+     * here measured whichever of the two the machine happened to reach
+     * first, so the same app gave two different answers depending on how
+     * busy it was. This asks for the settled one.
+     */
+    const settled = () => until('the pinned message to be listed',
+      `[...document.querySelectorAll('.pinbox .pbl')].some((n) => n.textContent.includes('worth keeping'))`,
+      12000)
+
     const byIcon = await pressIcon()
     check('the pin icon in the header can be pressed', byIcon.found && !byIcon.covered, byIcon)
-    await wait(700)
+    check('the pinned message is listed', await settled() === true)
     const fromIcon = await where()
     check('it opens the pinned messages', fromIcon !== null, fromIcon)
     check('and they are on screen', fromIcon && fromIcon.onScreen === true, fromIcon)
@@ -106,9 +119,14 @@ module.exports = {
 
     const byLine = await press('.sys-link', 'See pins')
     check('See pins on the line can be pressed', byLine.found && !byLine.covered, byLine)
-    await wait(700)
+    check('the pinned message is listed this way too', await settled() === true)
     const fromLine = await where()
     check('that opens the pinned messages too', fromLine !== null, fromLine)
+    /* And once what it holds has arrived it is still on the screen, which is
+       the thing the placing exists to guarantee and the thing measuring a box
+       that was about to grow could not. */
+    check('and is still fully on screen with its contents in it',
+      fromLine && fromLine.onScreen === true, fromLine)
 
     /*
      * The whole point. Same panel, same place - not "somewhere near the top",
@@ -117,5 +135,44 @@ module.exports = {
     check('in exactly the same place as the icon opens them',
       fromLine && fromIcon && fromLine.top === fromIcon.top && fromLine.left === fromIcon.left,
       { fromIcon, fromLine })
+
+    /*
+     * And it follows the header when the header moves.
+     *
+     * The strip of notices above the conversation is measured after it is
+     * drawn, and its height is handed to the stylesheet as --bars, which
+     * pushes the conversation - header, pin button and all - down by that
+     * much. The panel measured the button once, on the way up, so whether it
+     * ended up beside the button or sixty pixels above it came down to which
+     * of the two happened first. In the full suite, on a busy machine, it
+     * lost: the same two ways in put the panel in two different places.
+     *
+     * Driven here rather than waited for. A race reproduced by luck is a
+     * test that fails once a fortnight and tells nobody why; setting the bar
+     * height directly is the same movement, on purpose, every time.
+     */
+    const button = () => js(`(() => {
+      const b = document.querySelector('[aria-label="Pinned messages"]')
+      return b ? Math.round(b.getBoundingClientRect().top) : null })()`)
+
+    const buttonBefore = await button()
+    const boxBefore = await where()
+    check('the panel is beside the button to start with',
+      boxBefore && buttonBefore !== null && boxBefore.top === buttonBefore,
+      { box: boxBefore, button: buttonBefore })
+
+    await js(`(() => {
+      document.documentElement.style.setProperty('--bars', '120px')
+      return 1 })()`)
+    await wait(600)
+
+    const buttonAfter = await button()
+    const boxAfter = await where()
+    check('a notice appearing really does move the button',
+      buttonAfter !== null && buttonBefore !== null && buttonAfter > buttonBefore,
+      { before: buttonBefore, after: buttonAfter })
+    check('and the panel goes with it rather than staying behind',
+      boxAfter && boxAfter.top === buttonAfter,
+      { box: boxAfter, button: buttonAfter })
   },
 }

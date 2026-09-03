@@ -638,14 +638,10 @@ export function Shell({
     if (id !== world.me.id) {
       items.push({
         kind: 'item', label: 'Message', icon: 'chat',
+        /* Through the one door. Reached from a server's member list, this is
+           the only caller that has to leave a server on the way. */
         onPick: () => {
-          void server.post<{ channel?: { id?: Id } }>('/api/dms', { userId: id })
-            .then((r) => {
-              const opened = r?.channel?.id
-              if (!opened) return
-              openToRead(opened)
-            })
-            .catch(() => { /* refused or offline */ })
+          void openConversationWith(id).catch(() => { /* refused or offline */ })
         },
       })
     }
@@ -1169,6 +1165,40 @@ export function Shell({
     setChannelId(id)
     setSlid(null)
   }, [])
+
+  /**
+   * Open the conversation with somebody, from anywhere in the app.
+   *
+   * Three callers already did this by hand and a fourth did most of it. The
+   * one that was wrong is the only one reached from inside a server -
+   * "Message" on the member list - and it set which channel was open without
+   * setting which server you were in, which is the other half of where you
+   * are. While that still says a server the conversation cannot resolve at
+   * all, so the id went somewhere the screen had no way to draw: the menu
+   * closed and nothing moved.
+   *
+   * The three that worked were all reached from the conversations screen,
+   * where that half was already right - which is why the same few lines
+   * copied four times were correct three times.
+   *
+   * Both halves, and the list, in one place.
+   */
+  const openConversationWith = useCallback(async (who: Id) => {
+    const r = await server.post<{ channel?: { id?: Id } }>('/api/dms', { userId: who })
+    const opened = r?.channel?.id
+    if (!opened) return null
+    /* Fetched rather than appended, so what a conversation is called is the
+       server's answer and not a guess made here. */
+    world.dms = await loadDms(server).catch(() => world.dms)
+    /* And say so. The world is one object changed in place, so a new entry
+       in the list is not noticed by itself. */
+    changed()
+    /* Which server, then which channel. A conversation belongs to nobody, so
+       arriving in one means leaving whatever server you were in. */
+    setWhere({ kind: 'dms' })
+    openToRead(opened)
+    return opened
+  }, [server, world, changed, openToRead])
 
 
 

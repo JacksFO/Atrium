@@ -59,8 +59,42 @@ export function Pins({
    */
   const [anchor, setAnchor] = useState<Anchor | null>(null)
   useEffect(() => {
-    const button = document.querySelector('[aria-label="Pinned messages"]')
-    setAnchor(button ? anchorOf(button) : null)
+    const find = () => {
+      const button = document.querySelector('[aria-label="Pinned messages"]')
+      const now = button ? anchorOf(button) : null
+      /* Only when it has actually moved, so this cannot talk itself into a
+         loop of renders that each measure the same button again. */
+      setAnchor((was) => (
+        was && now && was.x === now.x && was.y === now.y ? was : now
+      ))
+    }
+    find()
+
+    /*
+     * And again when the header moves under it.
+     *
+     * The strip of notices above the conversation is measured after it is
+     * drawn and its height handed to the stylesheet as --bars, which pushes
+     * the whole conversation - header, pin button and all - down by that
+     * much. That happens after this mounts. Measured once, the panel kept
+     * the position the button had before it was pushed, and opened sixty-odd
+     * pixels above the thing it belongs to.
+     *
+     * Which of the two you got came down to whether the strip was measured
+     * before or after this ran, so the same app put the panel in two
+     * different places on the same machine depending on how busy it was.
+     */
+    const moved = new MutationObserver(find)
+    moved.observe(document.documentElement, {
+      attributes: true, attributeFilter: ['style'],
+    })
+    /* And when the window changes shape, which moves it for ordinary
+       reasons. */
+    window.addEventListener('resize', find)
+    return () => {
+      moved.disconnect()
+      window.removeEventListener('resize', find)
+    }
   }, [])
   const { ref, at } = useAnchored(anchor, phone)
 
