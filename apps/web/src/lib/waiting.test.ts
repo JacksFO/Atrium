@@ -87,6 +87,33 @@ describe('what was waiting', () => {
     expect(whatWaits(w, [])).toEqual([])
   })
 
+  /*
+   * And one in a server set to Only @mentions with nothing naming you.
+   *
+   * That setting turned the sounds off and left the red numbers exactly
+   * where they were, which is what somebody choosing it was trying to stop.
+   * The server has always tracked which channels hold an unread mention and
+   * the client has always held the list; nothing read it.
+   */
+  it('and one in a mentions-only server with nothing naming you', () => {
+    const w = world()
+    w.unread.set('c1', 5)
+    w.spacePrefs.set('s1', {
+      spaceId: 's1', level: 'mentions', mutedUntil: null, suppressEveryone: false,
+    })
+    expect(whatWaits(w, [])).toEqual([])
+  })
+
+  it('but keeps it the moment something does', () => {
+    const w = world()
+    w.unread.set('c1', 5)
+    w.mentioned.add('c1')
+    w.spacePrefs.set('s1', {
+      spaceId: 's1', level: 'mentions', mutedUntil: null, suppressEveryone: false,
+    })
+    expect(whatWaits(w, []).map((x) => x.id)).toEqual(['c1'])
+  })
+
   /* And a channel in a server somebody has muted, which is the case that
      could not be expressed at all while this asked a set of channel ids. */
   it('and one in a server that was muted', () => {

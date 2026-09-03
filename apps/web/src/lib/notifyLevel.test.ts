@@ -170,14 +170,37 @@ describe('whether a channel shows anything', () => {
   })
 
   /*
-   * Only mentions still counts. A badge there would have to say how many of
-   * the waiting messages name you, and nothing counts that - so the choice is
-   * a number that is wrong or the whole number, and the whole number is the
-   * honest one.
+   * On Only @mentions the badge is the mention.
+   *
+   * This showed a badge for every unread message, which turned the sounds off
+   * and left the red numbers exactly where they were - precisely what
+   * somebody choosing that setting was trying to stop. The server has always
+   * tracked which channels hold an unread mention and the client has always
+   * held the list; nothing read it.
    */
-  it('but a server set to only mentions still counts', () => {
-    expect(quietIn('c1', 's1', chans(), spaces({ s1: space({ level: 'mentions' }) }), T))
+  it('and shows nothing for a mentions-only server with no mention waiting', () => {
+    expect(quietIn('c1', 's1', chans(), spaces({ s1: space({ level: 'mentions' }) }), T, false))
+      .toBe(true)
+  })
+
+  it('but shows it the moment something names you', () => {
+    expect(quietIn('c1', 's1', chans(), spaces({ s1: space({ level: 'mentions' }) }), T, true))
       .toBe(false)
+  })
+
+  /* And a mention does not bring back a channel set to Nothing, or muting
+     something would stop meaning anything the moment somebody typed your
+     name in it. */
+  it('and a mention does not speak through Nothing', () => {
+    expect(quietIn('c1', 's1', chans(), spaces({ s1: space({ level: 'nothing' }) }), T, true))
+      .toBe(true)
+    expect(quietIn('c1', 's1', chans(), spaces({ s1: space({ mutedUntil: T + 5000 }) }), T, true))
+      .toBe(true)
+  })
+
+  /* On All messages the badge is the unread count, mention or not. */
+  it('and everything still counts on all messages', () => {
+    expect(quietIn('c1', 's1', chans(), spaces(), T, false)).toBe(false)
   })
 
   /* And a channel set on purpose still counts through a muted server, the

@@ -58,7 +58,7 @@ export function whatWaits(
     /* Asked of the channel and the server it is in, rather than of a set of
        muted channel ids - a server somebody has muted has to stop counting
        here too, and its channels are not in that set. */
-    if (quietIn(id, channel?.space_id ?? null, w.prefs, w.spacePrefs, Date.now())) continue
+    if (quietIn(id, channel?.space_id ?? null, w.prefs, w.spacePrefs, Date.now(), w.mentioned.has(id))) continue
     /* A channel this client has not heard of - one somebody was removed from,
        or a conversation not fetched yet. Naming it "somewhere" would be worse
        than leaving it out. */

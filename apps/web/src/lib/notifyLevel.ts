@@ -121,12 +121,13 @@ export const LEVEL_LABEL: Record<ChannelLevel, string> = {
  * tile, because the counting asked a set of muted channel ids and a muted
  * server never put its channels in it.
  *
- * "Only mentions" is deliberately not quiet. A badge there would have to say
- * how many of the waiting messages name you, and nothing counts that - so the
- * honest choices are a number that is wrong and a number that is the whole
- * count. It stays the whole count.
+ * `named` is whether anything waiting in there actually mentions you, and it
+ * is what makes Only @mentions mean the same thing to the eyes as it does to
+ * the ears. Without it that setting turned the sounds off and left the red
+ * numbers exactly where they were - which is precisely what somebody choosing
+ * it was trying to stop.
  *
- * Takes the two maps rather than the world, so this file still knows nothing
+ * Takes what it needs rather than the world, so this file still knows nothing
  * about anything but settings.
  */
 export function quietIn(
@@ -135,10 +136,17 @@ export function quietIn(
   channels: ReadonlyMap<string, ChannelSetting>,
   spaces: ReadonlyMap<string, SpaceSetting>,
   now: number,
+  /** Whether something waiting in here names you. */
+  named = false,
 ): boolean {
-  return levelFor(
+  const level = levelFor(
     channels.get(channelId),
     spaceId ? spaces.get(spaceId) : undefined,
     now,
-  ) === 'nothing'
+  )
+  if (level === 'nothing') return true
+  /* On mentions, the badge is the mention. Nothing waiting that names you is
+     nothing worth a number. */
+  if (level === 'mentions') return !named
+  return false
 }

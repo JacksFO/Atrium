@@ -198,7 +198,7 @@ function waitingIn(world: World, spaceId: Id): number {
        be counted, or a server carries a number no channel inside it will
        admit to - and a muted server must not be counted either, which is what
        asking a set of muted channel ids could never answer. */
-    if (quietIn(c.id, spaceId, world.prefs, world.spacePrefs, now)) continue
+    if (quietIn(c.id, spaceId, world.prefs, world.spacePrefs, now, world.mentioned.has(c.id))) continue
     n += world.unread.get(c.id) ?? 0
   }
   return n
@@ -3436,7 +3436,7 @@ function Channels({
               {/* What is waiting. Absent at zero rather than a nought, and
                   absent on a muted channel — the point of muting it is not to
                   be told, and a number is being told. */}
-              {!quietIn(c.id, space.id, world.prefs, world.spacePrefs, Date.now())
+              {!quietIn(c.id, space.id, world.prefs, world.spacePrefs, Date.now(), world.mentioned.has(c.id))
                 && !!world.unread.get(c.id) && (
                 /* Through badgeLabel, like the badge on the taskbar. The
                    server stops counting at a hundred, so the raw number is a
@@ -3472,7 +3472,7 @@ function Channels({
                 {world.muted.has(c.id) && <Icon name="belloff" size={13} />}
                 {/* No server: a conversation belongs to the people in it, so
                     there is nothing above it to defer to. */}
-                {!quietIn(c.id, null, world.prefs, world.spacePrefs, Date.now())
+                {!quietIn(c.id, null, world.prefs, world.spacePrefs, Date.now(), world.mentioned.has(c.id))
                   && !!world.unread.get(c.id) && (
                   <span className="pill">{badgeLabel(world.unread.get(c.id) ?? 0)}</span>
                 )}
