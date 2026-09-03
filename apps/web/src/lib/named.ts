@@ -18,32 +18,55 @@ import type { World } from './world'
  * mark and the second is corrected by the next sign-in.
  */
 export function namesMe(body: string, w: World): boolean {
-  if (!body || !body.includes('@')) return false
+  const { me, everyone } = namedHow(body, w)
+  return me || everyone
+}
 
-  const me = w.me.username?.toLowerCase()
-  const tokens = ['everyone', 'here']
-  if (me) tokens.push(me)
+/**
+ * The same question, answered in its two halves.
+ *
+ * Being named personally and being caught by an @everyone are different
+ * things, and somebody who has turned @everyone off in a server is saying
+ * exactly that: tell me what is about me, not what is about everybody. One
+ * boolean cannot carry that, which is why this exists beside the one that
+ * can.
+ */
+export function namedHow(body: string, w: World): { me: boolean; everyone: boolean } {
+  if (!body || !body.includes('@')) return { me: false, everyone: false }
+
+  const mine = w.me.username?.toLowerCase()
+  const wide = ['everyone', 'here']
+  const tokens: string[] = []
+  if (mine) tokens.push(mine)
 
   /* The roles you hold that may be named. @everyone is not among them - it is
      the word above, and every account holds the role. */
-  const mine = new Set(
+  const held = new Set(
     w.assignments.filter((a) => a.user_id === w.me.id).map((a) => a.role_id),
   )
   for (const r of w.roles) {
-    if (!mine.has(r.id) || r.kind === 'everyone') continue
+    if (!held.has(r.id) || r.kind === 'everyone') continue
     if ((r as { mentionable?: number }).mentionable === 0) continue
     tokens.push(r.name.toLowerCase())
   }
 
   const text = body.toLowerCase()
-  for (const token of tokens.sort((a, b) => b.length - a.length)) {
-    let at = text.indexOf(`@${token}`)
-    while (at !== -1) {
-      const after = text[at + token.length + 1]
-      /* A word boundary, so @sam does not fire on @sammy. */
-      if (after === undefined || !/[a-z0-9_.-]/.test(after)) return true
-      at = text.indexOf(`@${token}`, at + 1)
+  /** Whether any of these words is in there as a mention. */
+  const has = (words: readonly string[]): boolean => {
+    for (const token of [...words].sort((a, b) => b.length - a.length)) {
+      let at = text.indexOf(`@${token}`)
+      while (at !== -1) {
+        const after = text[at + token.length + 1]
+        /* A word boundary, so @sam does not fire on @sammy. */
+        if (after === undefined || !/[a-z0-9_.-]/.test(after)) return true
+        at = text.indexOf(`@${token}`, at + 1)
+      }
     }
+    return false
   }
-  return false
+
+  /* And the way a mention is actually written when it is picked from the
+     list, which survives a rename and is what most of them are. */
+  const byId = body.includes(`<@${w.me.id}>`)
+  return { me: byId || has(tokens), everyone: has(wide) }
 }

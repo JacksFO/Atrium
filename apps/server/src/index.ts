@@ -16,7 +16,7 @@ import { statfs } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { config } from './config.js'
 import { enableOffsite, offsiteLogTo } from './offsite.js'
-import { db, setConversationClosed, seed, hydrate, isDirect, dmMembers, freeDiscriminator, joinSpace, rememberUpload, visibleMembers, areFriends, addFriend, removeFriend, friendsOf, blockUser, unblockUser, blockedBy, blockedBetween, setChannelPref, MUTED_INDEFINITELY, ACTIVE_USERS, PUBLIC_USER_COLUMNS, tightenSpaceColumns, type MessageRow } from './db.js'
+import { db, setConversationClosed, seed, hydrate, isDirect, dmMembers, freeDiscriminator, joinSpace, rememberUpload, visibleMembers, areFriends, addFriend, removeFriend, friendsOf, blockUser, unblockUser, blockedBy, blockedBetween, setChannelPref, setSpacePref, isSpaceMember, MUTED_INDEFINITELY, ACTIVE_USERS, PUBLIC_USER_COLUMNS, tightenSpaceColumns, type MessageRow } from './db.js'
 import { attachGateway, pushAboutMember, pushToUsers, pushChannelEvent, announceJoin, dmBetweenOrMake } from './gateway.js'
 import { nameProblem, NAME_REFUSED } from './names.js'
 import { allow, retryAfter, reset } from './ratelimit.js'
@@ -1760,6 +1760,71 @@ app.get('/api/rtc/ice', async (req, reply) => {
  * changes nothing anybody else can see, so it needs no permission beyond
  * being able to open the channel in the first place.
  */
+/**
+ * What to be told about a whole server.
+ *
+ * The thing a channel set to "use my default" defers to. Same shape as the
+ * channel version beneath it, and for the same reasons - a duration rather
+ * than a deadline, every field optional, and your own other windows told.
+ */
+app.put('/api/spaces/:id/prefs', async (req, reply) => {
+  const user = await authed(req as never)
+  if (!user) return reply.code(401).send({ error: 'not signed in' })
+
+  const { id } = req.params as { id: string }
+  /* Only for a server you are in. Somebody can hold a preference about a
+     place they have left, but they cannot make one about a place they have
+     never been - and the row would outlive nothing useful. */
+  if (!isSpaceMember(user.id, id)) {
+    return reply.code(403).send({ error: 'you are not in that server' })
+  }
+
+  const body = (req.body ?? {}) as {
+    level?: string; muteFor?: number | null; suppressEveryone?: boolean
+  }
+  const patch: {
+    level?: 'all' | 'mentions' | 'nothing'
+    mutedUntil?: number | null
+    suppressEveryone?: boolean
+  } = {}
+
+  if (body.level !== undefined) {
+    /*
+     * No 'default' here, unlike a channel. This *is* the default - a server
+     * deferring to itself is a question with no answer, and accepting the
+     * word would store a level that nothing could resolve.
+     */
+    if (!['all', 'mentions', 'nothing'].includes(body.level)) {
+      return reply.code(400).send({ error: 'that is not a notification setting' })
+    }
+    patch.level = body.level as typeof patch.level
+  }
+
+  /* A duration rather than a deadline, for the same reason as a channel: a
+     client sending its own "until" is sending its own clock. */
+  if (body.muteFor !== undefined) {
+    if (body.muteFor === null) patch.mutedUntil = null
+    else if (typeof body.muteFor !== 'number' || body.muteFor < 0 || body.muteFor > 30 * 86400_000) {
+      return reply.code(400).send({ error: 'that is not a length of time' })
+    } else {
+      patch.mutedUntil = body.muteFor === 0 ? MUTED_INDEFINITELY : Date.now() + body.muteFor
+    }
+  }
+
+  if (body.suppressEveryone !== undefined) {
+    if (typeof body.suppressEveryone !== 'boolean') {
+      return reply.code(400).send({ error: 'that is not a yes or a no' })
+    }
+    patch.suppressEveryone = body.suppressEveryone
+  }
+
+  const pref = setSpacePref(user.id, id, patch)
+  /* Your own other windows, the same as a channel: muting a server on one
+     machine must not leave it ringing on another. */
+  pushToUsers([user.id], { t: 'space-prefs-changed', pref })
+  return { pref }
+})
+
 app.put('/api/channels/:id/prefs', async (req, reply) => {
   const user = await authed(req as never)
   if (!user) return reply.code(401).send({ error: 'not signed in' })

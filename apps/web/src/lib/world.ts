@@ -4,7 +4,7 @@ import { Presences } from './presence'
 import type { DmSummary, Friend } from './load'
 import type { Activity,
   Assignment, Category, ChannelPref, Channel, Id, Message, ReadyFrame, Role, ServerEvent,
-  Space, User,
+  Space, SpacePref, User,
 } from './wire'
 
 /**
@@ -80,6 +80,13 @@ export type World = {
    * means "whatever my default is".
    */
   prefs: Map<Id, ChannelPref>
+  /**
+   * What somebody wants to be told about whole servers.
+   *
+   * What a channel set to "use my default" defers to. Absent means the
+   * default, which is everything - so this stays empty for almost everybody.
+   */
+  spacePrefs: Map<Id, SpacePref>
   /** Loaded per channel, as you look at them. */
   messages: Map<Id, Message[]>
   /**
@@ -188,7 +195,7 @@ export function emptyWorld(me: User): World {
     invitesAt: 0,
     mentioned: new Set(),
     muted: new Set(),
-    prefs: new Map(),
+    prefs: new Map(), spacePrefs: new Map(),
     membersBySpace: new Map(),
     nicknames: new Map(),
     looseOrder: {},
@@ -260,6 +267,7 @@ export function applyReady(w: World, f: ReadyFrame): World {
      been unblocked - silently, and only for that session. */
   w.blocked = new Set(f.blocked ?? [])
   w.prefs = new Map((f.channelPrefs ?? []).map((p) => [p.channelId, p]))
+  w.spacePrefs = new Map((f.spacePrefs ?? []).map((p) => [p.spaceId, p]))
   w.muted = new Set(
     (f.channelPrefs ?? [])
       .filter((p) => p.mutedUntil !== null || p.level === 'nothing')
@@ -520,6 +528,18 @@ export function apply(w: World, e: ServerEvent): Effect {
 
     /* Yours, from another window of your own. The same two facts the opening
        frame carries, kept in step the same way. */
+    /* The same fact about a whole server, kept in step the same way. */
+    case 'space-prefs-changed': {
+      w.spacePrefs.set(e.pref.spaceId, e.pref)
+      /* A muted server joins the same set the muted channels are in, because
+         that set is what everything drawing a badge already asks. */
+      const quiet = (e.pref.mutedUntil !== null && e.pref.mutedUntil > Date.now())
+        || e.pref.level === 'nothing'
+      if (quiet) w.muted.add(e.pref.spaceId)
+      else w.muted.delete(e.pref.spaceId)
+      return NOTHING
+    }
+
     case 'prefs-changed': {
       w.prefs.set(e.pref.channelId, e.pref)
       const quiet = (e.pref.mutedUntil !== null && e.pref.mutedUntil > Date.now())

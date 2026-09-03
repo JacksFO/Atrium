@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { notificationFor, shouldNotify, tabTitle } from '../lib/notify'
 import { playMention, playPing } from '../lib/sound'
+import { namedHow } from '../lib/named'
+import { tellMeAbout } from '../lib/notifyLevel'
 import { badgeIcon, badgeTooltip, shell } from '../lib/shell'
 import type { Message, User } from '../lib/wire'
 import type { World } from '../lib/world'
@@ -16,18 +18,6 @@ import { nameIn, spaceOfChannel } from '../lib/names'
  * nobody asked for is the thing people refuse on reflex and then cannot
  * easily undo.
  */
-/**
- * Whether a message names you.
- *
- * By id first, which is what a mention is written as and what survives a
- * rename, and by handle as well because that is what somebody typing from
- * memory writes. A display name is deliberately not matched: they change, and
- * a common one would have half a server pinging on every message.
- */
-function mentionsMe(body: string, me: Pick<User, 'id' | 'username'>): boolean {
-  if (body.includes(`<@${me.id}>`)) return true
-  return new RegExp(`(^|[\s(])@${me.username}\b`, 'i').test(body)
-}
 
 export function useNotify(world: World | null, opts: {
   wanted: boolean
@@ -74,7 +64,37 @@ export function useNotify(world: World | null, opts: {
   const tell = useCallback((m: Message, who: User | undefined, where: string | null) => {
     if (!world) return
     if (said.current.has(m.id)) return
-    const allow = shouldNotify(m, world.me, {
+
+    /*
+     * How much this person wants to be told about here, decided once.
+     *
+     * The channel's own setting, or the server's where the channel defers -
+     * which is what "use my default" was always meant to mean and had
+     * nothing behind it. notifyLevel.ts holds the order and is tested on its
+     * own.
+     *
+     * This replaces asking whether the channel is in the muted set. That
+     * question is true for Nothing and for a running mute and false for
+     * everything else - so Only @mentions was a setting somebody could make,
+     * that was stored, that came back in the menu, and that did nothing at
+     * all.
+     *
+     * Decided here rather than twice, because the sound and the notification
+     * are separate decisions that must not disagree about what was asked for:
+     * a notification for a message that made no sound is the shape that
+     * disagreement takes.
+     */
+    const channel = world.channels.find((c) => c.id === m.channel_id)
+    const inSpace = channel && 'space_id' in channel ? channel.space_id : null
+    const named = namedHow(m.body, world)
+    const wanted = tellMeAbout(
+      named,
+      world.prefs.get(m.channel_id),
+      inSpace ? world.spacePrefs.get(inSpace) : undefined,
+      Date.now(),
+    )
+
+    const allow = wanted && shouldNotify(m, world.me, {
       wanted: opts.wanted,
       permission,
       visible,
@@ -99,7 +119,7 @@ export function useNotify(world: World | null, opts: {
      * Except your own, and except a channel that has been silenced.
      */
     const mine = m.author_id === world.me.id
-    const hushed = world.muted.has(m.channel_id)
+    const hushed = !wanted
     /*
      * And silent from somebody who has been blocked.
      *
@@ -110,8 +130,7 @@ export function useNotify(world: World | null, opts: {
      */
     const shunned = world.blocked.has(m.author_id)
     if (!mine && !hushed && !shunned) {
-      const named = mentionsMe(m.body, world.me)
-      if (named) playMention()
+      if (named.me || named.everyone) playMention()
       else playPing()
     }
 

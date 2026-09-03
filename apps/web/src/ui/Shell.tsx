@@ -12,6 +12,7 @@ import { canCopyPictures, copyPicture } from '../lib/copyPicture'
 import { NewSince } from './NewSince'
 import { JumpDown } from './JumpDown'
 import { badgeLabel } from '../lib/shell'
+import { LEVEL_LABEL } from '../lib/notifyLevel'
 import { Switcher } from './Switcher'
 import { Shortcuts } from './Shortcuts'
 import { moved as wrapped, targetsOf, type Target } from '../lib/switcher'
@@ -21,7 +22,7 @@ import type { Api } from '../lib/api'
 import { remember, type World } from '../lib/world'
 import type { PermissionId } from '../lib/permissions'
 import type {
-  ChannelKind, Activity, Channel, ChannelPref, Id, Message, Space, User,
+  ChannelKind, Activity, Channel, ChannelPref, Id, Message, Space, SpacePref, User,
 } from '../lib/wire'
 import { Avatar, AvatarWithStatus, seedOf } from './Avatar'
 import { Composer, type Mention } from './Composer'
@@ -1102,6 +1103,60 @@ export function Shell({
     else if (page) rememberSpot({ kind: 'page', page })
   }, [where, channelId, page])
 
+  /**
+   * What to be told about a whole server.
+   *
+   * Written through the server rather than kept here, because it is a fact
+   * about the account and not about this window - and the answer comes back
+   * to every other window of theirs as well, so muting a server on the
+   * desktop does not leave it ringing on a phone.
+   */
+  const setSpacePref = useCallback(
+    (spaceId: Id, body: { level?: string; muteFor?: number | null }) => {
+      void server.put<{ pref?: SpacePref }>(
+        `/api/spaces/${encodeURIComponent(spaceId)}/prefs`, body,
+      )
+        .then((r) => {
+          if (!r?.pref) return
+          world.spacePrefs.set(spaceId, r.pref)
+          /* The same set every badge already asks, so a muted server stops
+             counting without anything else having to learn a second rule. */
+          const off = (r.pref.mutedUntil !== null && r.pref.mutedUntil > Date.now())
+            || r.pref.level === 'nothing'
+          if (off) world.muted.add(spaceId)
+          else world.muted.delete(spaceId)
+          changed()
+        })
+        .catch(() => { /* refused or offline */ })
+    },
+    [server, world, changed],
+  )
+
+  /*
+   * Whether muted channels are hidden, per server.
+   *
+   * Kept on this machine rather than on the account: it is a view of this
+   * screen rather than a fact about the person, and the same list can
+   * reasonably be tidied on a laptop and left alone on a phone.
+   */
+  const [hiddenIn, setHiddenIn] = useState<Set<Id>>(() => {
+    try {
+      const had = localStorage.getItem('atrium.hideMuted')
+      return new Set(had ? (JSON.parse(had) as Id[]) : [])
+    } catch { return new Set() }
+  })
+  const hidingMuted = useCallback((spaceId: Id) => hiddenIn.has(spaceId), [hiddenIn])
+  const setHidingMuted = useCallback((spaceId: Id, hide: boolean) => {
+    setHiddenIn((was) => {
+      const next = new Set(was)
+      if (hide) next.add(spaceId)
+      else next.delete(spaceId)
+      try { localStorage.setItem('atrium.hideMuted', JSON.stringify([...next])) }
+      catch { /* a preference that cannot be written is still worth having now */ }
+      return next
+    })
+  }, [])
+
   const openToRead = useCallback((id: Id | null) => {
     setPage(null)
     setOnStage(false)
@@ -1408,6 +1463,22 @@ export function Shell({
       ?? channels.find((c) => c.kind === 'text')
       ?? null
     : null
+  /*
+   * And with the muted ones taken out, where somebody has asked for that.
+   *
+   * Except the one they are looking at. A list that removes the channel
+   * currently open is a list that appears to have lost it, and somebody who
+   * mutes the channel they are reading should not watch it vanish from under
+   * them.
+   */
+  const shownChannels = useMemo(() => {
+    if (!space || !hidingMuted(space.id)) return channels
+    return channels.filter((c) => c.id === channelId || !world.muted.has(c.id))
+  /* eslint-disable-next-line react-hooks/exhaustive-deps -- `version` is what
+     says the world changed; the muted set lives on it and is mutated in
+     place. */
+  }, [channels, space, hidingMuted, channelId, world, version])
+
   const chat = space ? null : chats.find((c) => c.id === channelId) ?? null
   const openId = channel?.id ?? chat?.id ?? null
 
@@ -1585,6 +1656,9 @@ export function Shell({
         onInvite={() => setInviting(true)}
         onServerSettings={() => setShowSettings(serverPanesFor(here)[0]?.[0] ?? 'account')}
         onReorder={reorderSpaces}
+        onSpacePref={setSpacePref}
+        hidingMuted={hidingMuted}
+        onHideMuted={setHidingMuted}
         onHome={() => {
           setWhere({ kind: 'dms' })
           /*
@@ -1779,7 +1853,7 @@ export function Shell({
         }}
         grip={phone ? null : drag('side', 'right')}
         space={space}
-        channels={channels}
+        channels={shownChannels}
         chats={chats}
         current={openId}
         page={page}
@@ -2751,7 +2825,7 @@ export function Shell({
 /** The servers, down the left. */
 function Rail({
   world, where, onHome, onPick, onMove, onReorder, grip, onNewServer, onReadAll, onLeave,
-  onInvite, onServerSettings,
+  onInvite, onServerSettings, onSpacePref, hidingMuted, onHideMuted,
 }: {
   /** Make one, or walk into somebody else's. */
   onNewServer: () => void
@@ -2771,11 +2845,20 @@ function Rail({
   onReorder: (order: Id[]) => void
   /** Clear everything waiting anywhere, from where everywhere is visible. */
   onReadAll?: (ids: Id[]) => void
+  /** How much to be told about this server, and for how long. */
+  onSpacePref: (spaceId: Id, body: { level?: string; muteFor?: number | null }) => void
+  /** Whether muted channels are hidden in this server, and the switch. */
+  hidingMuted: (spaceId: Id) => boolean
+  onHideMuted: (spaceId: Id, hide: boolean) => void
   onPick: (id: Id) => void
   grip: Grip
 }) {
   const { rowProps } = useDragOrder(world.spaces.map((s) => s.id), onReorder)
   const [menu, setMenu] = useState<{ items: MenuItem[]; x: number; y: number } | null>(null)
+  /* Every pick closes the menu it was in, which is right for every item
+     except the two that hand over to a second list in the same place. They
+     say so, and this is how. */
+  const stayOpen = useRef(false)
 
   /**
    * What right-clicking a server offers.
@@ -2790,6 +2873,13 @@ function Rail({
    */
   const menuFor = (s: Space, i: number): MenuItem[] => {
     const held = world.held.in(s.id, null)
+    const pref = world.spacePrefs.get(s.id)
+    const level = pref?.level ?? 'all'
+    /* A mute that has already lapsed is not a mute, and offering to lift one
+       that is over reads as the app having lost track. */
+    const mine = pref && pref.mutedUntil !== null && pref.mutedUntil > Date.now()
+      ? pref
+      : null
     const waiting = [...world.unread.entries()]
       .filter(([id, n]) => n > 0
         && world.channels.some((c) => c.id === id && c.space_id === s.id))
@@ -2810,6 +2900,59 @@ function Rail({
         ? [{ kind: 'item' as const, label: 'Server settings', icon: 'gear' as const,
              onPick: () => { onPick(s.id); onServerSettings() } }]
         : []),
+      { kind: 'rule' },
+      /*
+       * What to be told about, from where somebody is looking at the server
+       * rather than at one of its channels. The channel menu has said "use my
+       * default" from the beginning; this is where that default is set.
+       */
+      ...(mine
+        ? [{
+            kind: 'item' as const,
+            label: `Unmute server (${leftToRun(mine.mutedUntil)})`,
+            icon: 'bell' as const,
+            onPick: () => onSpacePref(s.id, { muteFor: null }),
+          }]
+        : [{
+            kind: 'item' as const,
+            label: 'Mute server',
+            icon: 'belloff' as const,
+            /* Hands over to a second menu in the same place, the way the
+               channel one does - every other item closes on picking. */
+            onPick: () => {
+              stayOpen.current = true
+              setMenu((at) => at && { ...at, items: MUTES.map(([label, ms]) => ({
+                kind: 'item' as const, label,
+                onPick: () => onSpacePref(s.id, { muteFor: ms }),
+              })) })
+            },
+          }]),
+      {
+        kind: 'item',
+        /* The current setting on the row, because a menu that hides what it
+           is set to makes somebody open it to find out and then close it
+           again. */
+        label: `Notifications: ${LEVEL_LABEL[level]}`,
+        icon: 'bell',
+        onPick: () => {
+          stayOpen.current = true
+          setMenu((at) => at && { ...at, items: (['all', 'mentions', 'nothing'] as const)
+            .map((id) => ({
+              kind: 'item' as const,
+              label: level === id ? `${LEVEL_LABEL[id]} ✓` : LEVEL_LABEL[id],
+              onPick: () => onSpacePref(s.id, { level: id }),
+            })) })
+        },
+      },
+      {
+        kind: 'item',
+        /* A view of this screen rather than a setting about you, so it is
+           kept on this machine - the same list can reasonably look different
+           on a phone and on a desktop. */
+        label: hidingMuted(s.id) ? 'Show muted channels' : 'Hide muted channels',
+        icon: 'hash',
+        onPick: () => onHideMuted(s.id, !hidingMuted(s.id)),
+      },
       { kind: 'rule' },
       { kind: 'item', label: 'Move up', icon: 'up', disabled: i === 0,
         onPick: () => onMove(s.id, -1) },
@@ -2943,7 +3086,10 @@ function Rail({
       {/* Drawn through a portal, so it does not matter that the rail is a
           narrow column with its own overflow. */}
       {menu && (
-        <Menu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />
+        <Menu x={menu.x} y={menu.y} items={menu.items} onClose={() => {
+          if (stayOpen.current) { stayOpen.current = false; return }
+          setMenu(null)
+        }} />
       )}
     </div>
   )

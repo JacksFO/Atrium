@@ -5,7 +5,7 @@ import type { Server, IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { randomUUID } from 'node:crypto'
 import { readToken, findUser } from './auth.js'
-import { db, rememberVoiceModeration, withReadCache, joinContainer, makeContainer, setConversationClosed, channelsForClient, conversationBetween, membersOfContainer, blockedBetween, blockedBy, hydrateOne, hydrateShared, forViewer, dmMembers, isDirect, startingMembers, canSeeMember, visibleWith, channelPrefsFor, channelFor, membersOfSpace, isSpaceMember, uploadClaim, ACTIVE_USERS, PUBLIC_USER_COLUMNS, type User, ROLE_ORDER_R } from './db.js'
+import { db, rememberVoiceModeration, withReadCache, joinContainer, makeContainer, setConversationClosed, channelsForClient, conversationBetween, membersOfContainer, blockedBetween, blockedBy, hydrateOne, hydrateShared, forViewer, dmMembers, isDirect, startingMembers, canSeeMember, visibleWith, channelPrefsFor, spacePrefsFor, channelFor, membersOfSpace, isSpaceMember, uploadClaim, ACTIVE_USERS, PUBLIC_USER_COLUMNS, type User, ROLE_ORDER_R } from './db.js'
 import { permissionsFor, permissionsIn, writeAudit, outranks, type Permission } from './permissions.js'
 import { mayIgnoreSlowmode, slowmodeMessage, waitLeft } from './slowmode.js'
 import { timedOutUntil } from './db.js'
@@ -1873,6 +1873,9 @@ export function attachGateway(server: Server): void {
            * and does not need a row on the wire.
            */
           channelPrefs: channelPrefsFor(user.id),
+          /* And what they have said about whole servers, which is what a
+             channel set to "use my default" defers to. */
+          spacePrefs: spacePrefsFor(user.id),
           /*
            * Who is in each server used to be sent here, for every server at
            * once, so the member column could be drawn without asking. It is

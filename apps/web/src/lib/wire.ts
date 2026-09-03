@@ -385,6 +385,8 @@ export type ReadyFrame = {
    * not lapsed are sent, so anything with a time on it is muted now.
    */
   channelPrefs: ChannelPref[]
+  /** What they want to be told about whole servers. Absent means the default. */
+  spacePrefs?: SpacePref[]
   permissionsBySpace: Record<Id, string[]>
   /** And the channels where that server-wide answer is not the answer, by
    *  server and then by channel. Only the ones that differ are sent. */
@@ -414,6 +416,16 @@ export type ReadyFrame = {
    * opening frame.
    */
   blocked?: Id[]
+}
+
+/** What somebody wants to be told about a whole server. */
+export type SpacePref = {
+  spaceId: Id
+  level: 'all' | 'mentions' | 'nothing'
+  /** When a mute lapses, or null for no mute. */
+  mutedUntil: number | null
+  /** Whether @everyone and @here stop counting as being named here. */
+  suppressEveryone: boolean
 }
 
 export type ChannelPref = {
@@ -486,6 +498,14 @@ export type ServerEvent =
   /* What you asked to be told about one channel, sent to you alone - so a
      channel muted on one machine is muted on the others. */
   | { t: 'prefs-changed'; pref: ChannelPref }
+  /**
+   * What somebody wants to be told about a whole server.
+   *
+   * The thing a channel set to "use my default" defers to. Carried to your
+   * own other windows the same way a channel's is: muting a server on one
+   * machine must not leave it ringing on another.
+   */
+  | { t: 'space-prefs-changed'; pref: SpacePref }
   | { t: 'member-roles' }
   /**
    * Somebody stopped from talking here, or let talk again.

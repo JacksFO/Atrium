@@ -29,6 +29,11 @@ export const KEPT = [
   'shareQuality',
   'getapp.snoozed',
   'recentEmoji',
+  /* Which servers have their muted channels hidden. A view of a screen
+     rather than a fact about the person, which is why it is here and not on
+     the account - and why it has to be carried like everything else that
+     lives on the machine. */
+  'hideMuted',
 ] as const
 
 /** The one that is a whole blob of preferences rather than a single value. */

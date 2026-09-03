@@ -515,6 +515,29 @@ CREATE TABLE IF NOT EXISTS channel_prefs (
 );
 CREATE INDEX IF NOT EXISTS idx_channel_prefs_user ON channel_prefs(user_id);
 
+-- What somebody wants to be told about a whole server.
+--
+-- The thing a channel set to "use my default" was always meant to defer to.
+-- That phrase has been in the menu from the beginning with nothing behind it,
+-- so every channel left alone behaved as "all messages" whether anybody
+-- wanted that or not.
+--
+-- One row per person per server, and only where they have said something: the
+-- absence of a row is the default, which is what keeps this empty for almost
+-- everybody.
+CREATE TABLE IF NOT EXISTS space_prefs (
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  space_id    TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+  level       TEXT NOT NULL DEFAULT 'all',
+  muted_until INTEGER,
+  -- Whether @everyone and @here stop counting as being named here. Its own
+  -- column rather than a fourth level, because it is a different question:
+  -- "what counts as a mention" rather than "how many of them do I want".
+  suppress_everyone INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, space_id)
+);
+CREATE INDEX IF NOT EXISTS idx_space_prefs_user ON space_prefs(user_id);
+
 CREATE TABLE IF NOT EXISTS reactions (
   message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
   user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -2974,6 +2997,80 @@ export type ChannelPref = {
   level: 'default' | 'all' | 'mentions' | 'nothing'
   /** When the mute lapses, or null when the channel is not muted. */
   mutedUntil: number | null
+}
+
+export type SpacePref = {
+  spaceId: string
+  level: 'all' | 'mentions' | 'nothing'
+  mutedUntil: number | null
+  suppressEveryone: boolean
+}
+
+/** Everything this person has said about whole servers. */
+export function spacePrefsFor(userId: string): SpacePref[] {
+  const rows = db.prepare(
+    `SELECT space_id, level, muted_until, suppress_everyone FROM space_prefs
+      WHERE user_id = ?
+        AND (level != 'all' OR suppress_everyone = 1
+             OR (muted_until IS NOT NULL AND muted_until > ?))`
+  ).all(userId, Date.now()) as Array<{
+    space_id: string; level: string; muted_until: number | null; suppress_everyone: number
+  }>
+
+  return rows.map((r) => ({
+    spaceId: r.space_id,
+    level: (['all', 'mentions', 'nothing'].includes(r.level) ? r.level : 'all') as SpacePref['level'],
+    mutedUntil: r.muted_until,
+    suppressEveryone: r.suppress_everyone === 1,
+  }))
+}
+
+/**
+ * Set what to be told about a server.
+ *
+ * Every part optional and only what is given changes, the same way the
+ * channel version works: the menu sets a level without touching a running
+ * mute, and muting does not reset the level.
+ */
+export function setSpacePref(
+  userId: string,
+  spaceId: string,
+  patch: {
+    level?: SpacePref['level']
+    mutedUntil?: number | null
+    suppressEveryone?: boolean
+  },
+): SpacePref {
+  db.prepare(
+    `INSERT INTO space_prefs (user_id, space_id, level, muted_until, suppress_everyone)
+     VALUES (?, ?, 'all', NULL, 0)
+     ON CONFLICT (user_id, space_id) DO NOTHING`
+  ).run(userId, spaceId)
+
+  if (patch.level !== undefined) {
+    db.prepare('UPDATE space_prefs SET level = ? WHERE user_id = ? AND space_id = ?')
+      .run(patch.level, userId, spaceId)
+  }
+  if (patch.mutedUntil !== undefined) {
+    db.prepare('UPDATE space_prefs SET muted_until = ? WHERE user_id = ? AND space_id = ?')
+      .run(patch.mutedUntil, userId, spaceId)
+  }
+  if (patch.suppressEveryone !== undefined) {
+    db.prepare('UPDATE space_prefs SET suppress_everyone = ? WHERE user_id = ? AND space_id = ?')
+      .run(patch.suppressEveryone ? 1 : 0, userId, spaceId)
+  }
+
+  const row = db.prepare(
+    'SELECT space_id, level, muted_until, suppress_everyone FROM space_prefs WHERE user_id = ? AND space_id = ?'
+  ).get(userId, spaceId) as {
+    space_id: string; level: string; muted_until: number | null; suppress_everyone: number
+  }
+  return {
+    spaceId: row.space_id,
+    level: (['all', 'mentions', 'nothing'].includes(row.level) ? row.level : 'all') as SpacePref['level'],
+    mutedUntil: row.muted_until,
+    suppressEveryone: row.suppress_everyone === 1,
+  }
 }
 
 /** Everything this person has said about individual channels. */
