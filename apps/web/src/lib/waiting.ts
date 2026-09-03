@@ -1,4 +1,5 @@
 import type { Conversation } from './dms'
+import { quietIn } from './notifyLevel'
 import type { Id } from './wire'
 import type { World } from './world'
 
@@ -50,10 +51,14 @@ export function whatWaits(
 
   const out: Waiting[] = []
   for (const [id, count] of w.unread) {
-    if (!count || w.muted.has(id)) continue
+    if (!count) continue
 
     const dm = dmById.get(id)
     const channel = channelById.get(id)
+    /* Asked of the channel and the server it is in, rather than of a set of
+       muted channel ids - a server somebody has muted has to stop counting
+       here too, and its channels are not in that set. */
+    if (quietIn(id, channel?.space_id ?? null, w.prefs, w.spacePrefs, Date.now())) continue
     /* A channel this client has not heard of - one somebody was removed from,
        or a conversation not fetched yet. Naming it "somewhere" would be worse
        than leaving it out. */

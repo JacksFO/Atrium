@@ -530,13 +530,14 @@ export function apply(w: World, e: ServerEvent): Effect {
        frame carries, kept in step the same way. */
     /* The same fact about a whole server, kept in step the same way. */
     case 'space-prefs-changed': {
+      /*
+       * Only here. A server id used to be put into `muted` as well, which is
+       * a set of channel ids - and the opening frame rebuilds that set from
+       * the channel preferences alone, so a muted server was in it this
+       * session and gone after a reload. Two paths filling one set
+       * differently. Everything that counts a badge asks the rule now.
+       */
       w.spacePrefs.set(e.pref.spaceId, e.pref)
-      /* A muted server joins the same set the muted channels are in, because
-         that set is what everything drawing a badge already asks. */
-      const quiet = (e.pref.mutedUntil !== null && e.pref.mutedUntil > Date.now())
-        || e.pref.level === 'nothing'
-      if (quiet) w.muted.add(e.pref.spaceId)
-      else w.muted.delete(e.pref.spaceId)
       return NOTHING
     }
 

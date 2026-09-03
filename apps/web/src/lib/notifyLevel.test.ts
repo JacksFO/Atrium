@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  levelFor, SPACE_DEFAULT, tellMeAbout, wantsTelling,
+  levelFor, quietIn, SPACE_DEFAULT, tellMeAbout, wantsTelling,
   type ChannelSetting, type SpaceSetting,
 } from './notifyLevel'
 
@@ -135,5 +135,63 @@ describe('the whole question at once', () => {
       { me: false, everyone: true },
       chan(), space({ level: 'mentions', suppressEveryone: true }), T,
     )).toBe(false)
+  })
+})
+
+/**
+ * And whether anything is drawn about it.
+ *
+ * Muting a server silenced its sounds and left a red number on its tile: the
+ * counting asked a set of muted channel ids, and a muted server never put its
+ * channels into that set. Two ways of asking one question, and they disagreed.
+ */
+describe('whether a channel shows anything', () => {
+  const chans = (m: Record<string, ChannelSetting> = {}) => new Map(Object.entries(m))
+  const spaces = (m: Record<string, SpaceSetting> = {}) => new Map(Object.entries(m))
+
+  it('shows a channel in an ordinary server', () => {
+    expect(quietIn('c1', 's1', chans(), spaces(), T)).toBe(false)
+  })
+
+  /* The one that was wrong. */
+  it('and shows nothing for a channel in a muted server', () => {
+    expect(quietIn('c1', 's1', chans(), spaces({ s1: space({ mutedUntil: T + 5000 }) }), T))
+      .toBe(true)
+  })
+
+  it('and nothing for a server set to nothing', () => {
+    expect(quietIn('c1', 's1', chans(), spaces({ s1: space({ level: 'nothing' }) }), T))
+      .toBe(true)
+  })
+
+  it('and nothing for a channel muted on its own', () => {
+    expect(quietIn('c1', 's1', chans({ c1: chan({ mutedUntil: T + 5000 }) }), spaces(), T))
+      .toBe(true)
+  })
+
+  /*
+   * Only mentions still counts. A badge there would have to say how many of
+   * the waiting messages name you, and nothing counts that - so the choice is
+   * a number that is wrong or the whole number, and the whole number is the
+   * honest one.
+   */
+  it('but a server set to only mentions still counts', () => {
+    expect(quietIn('c1', 's1', chans(), spaces({ s1: space({ level: 'mentions' }) }), T))
+      .toBe(false)
+  })
+
+  /* And a channel set on purpose still counts through a muted server, the
+     same way it still speaks. */
+  it('and a channel set to all speaks through a muted server', () => {
+    expect(quietIn(
+      'c1', 's1', chans({ c1: chan({ level: 'all' }) }),
+      spaces({ s1: space({ mutedUntil: T + 5000 }) }), T,
+    )).toBe(false)
+  })
+
+  /* A conversation has no server, and asking for one must not throw. */
+  it('and copes with a conversation, which is in no server', () => {
+    expect(quietIn('d1', null, chans(), spaces(), T)).toBe(false)
+    expect(quietIn('d1', null, chans({ d1: chan({ level: 'nothing' }) }), spaces(), T)).toBe(true)
   })
 })

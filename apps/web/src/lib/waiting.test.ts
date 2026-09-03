@@ -79,7 +79,22 @@ describe('what was waiting', () => {
   it('leaves out a channel that was muted', () => {
     const w = world()
     w.unread.set('c1', 5)
+    /* Set where the app sets it. `muted` is a convenience copy of this,
+       derived from it in all three places that fill either - and asking the
+       preferences is what lets a muted *server* count here as well. */
+    w.prefs.set('c1', { channelId: 'c1', level: 'default', mutedUntil: Date.now() + 60_000 })
     w.muted.add('c1')
+    expect(whatWaits(w, [])).toEqual([])
+  })
+
+  /* And a channel in a server somebody has muted, which is the case that
+     could not be expressed at all while this asked a set of channel ids. */
+  it('and one in a server that was muted', () => {
+    const w = world()
+    w.unread.set('c1', 5)
+    w.spacePrefs.set('s1', {
+      spaceId: 's1', level: 'all', mutedUntil: Date.now() + 60_000, suppressEveryone: false,
+    })
     expect(whatWaits(w, [])).toEqual([])
   })
 

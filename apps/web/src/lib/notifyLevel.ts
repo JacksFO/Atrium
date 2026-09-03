@@ -112,3 +112,33 @@ export const LEVEL_LABEL: Record<ChannelLevel, string> = {
   mentions: 'Only @mentions',
   nothing: 'Nothing',
 }
+
+/**
+ * Whether a channel should show nothing at all - no badge, no count.
+ *
+ * Asked of the channel and the server together, which is the whole point:
+ * muting a server used to silence its sounds and leave a red number on its
+ * tile, because the counting asked a set of muted channel ids and a muted
+ * server never put its channels in it.
+ *
+ * "Only mentions" is deliberately not quiet. A badge there would have to say
+ * how many of the waiting messages name you, and nothing counts that - so the
+ * honest choices are a number that is wrong and a number that is the whole
+ * count. It stays the whole count.
+ *
+ * Takes the two maps rather than the world, so this file still knows nothing
+ * about anything but settings.
+ */
+export function quietIn(
+  channelId: string,
+  spaceId: string | null | undefined,
+  channels: ReadonlyMap<string, ChannelSetting>,
+  spaces: ReadonlyMap<string, SpaceSetting>,
+  now: number,
+): boolean {
+  return levelFor(
+    channels.get(channelId),
+    spaceId ? spaces.get(spaceId) : undefined,
+    now,
+  ) === 'nothing'
+}

@@ -61,7 +61,25 @@ describe('what read all would clear', () => {
   it('and leaves a muted channel alone', () => {
     const w = world()
     w.unread.set('a1', 3)
+    /* Set where the app sets it. `muted` is a convenience copy derived from
+       the preferences, and asking the preferences is what lets a muted
+       server behave the same way as a muted channel. */
+    w.prefs.set('a1', { channelId: 'a1', level: 'default', mutedUntil: Date.now() + 60_000 })
     w.muted.add('a1')
+    expect(waitingHere(w, space('s1'), [])).toEqual([])
+  })
+
+  /*
+   * And one in a muted server, so a mute behaves the same way whichever of
+   * the two it was set on. It could not, while this asked a set that only
+   * ever held channel ids.
+   */
+  it('and a channel in a muted server', () => {
+    const w = world()
+    w.unread.set('a1', 3)
+    w.spacePrefs.set('s1', {
+      spaceId: 's1', level: 'all', mutedUntil: Date.now() + 60_000, suppressEveryone: false,
+    })
     expect(waitingHere(w, space('s1'), [])).toEqual([])
   })
 

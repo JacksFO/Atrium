@@ -12,7 +12,7 @@ import { canCopyPictures, copyPicture } from '../lib/copyPicture'
 import { NewSince } from './NewSince'
 import { JumpDown } from './JumpDown'
 import { badgeLabel } from '../lib/shell'
-import { LEVEL_LABEL } from '../lib/notifyLevel'
+import { LEVEL_LABEL, quietIn } from '../lib/notifyLevel'
 import { Switcher } from './Switcher'
 import { Shortcuts } from './Shortcuts'
 import { moved as wrapped, targetsOf, type Target } from '../lib/switcher'
@@ -191,10 +191,15 @@ const since = (ms: number): string =>
 /** How much is waiting anywhere in one server, for the tile in the rail. */
 function waitingIn(world: World, spaceId: Id): number {
   let n = 0
+  const now = Date.now()
   for (const c of world.channels) {
-    /* A muted channel is not counted here either, or a server would carry a
-       number that no channel inside it will admit to. */
-    if (c.space_id === spaceId && !world.muted.has(c.id)) n += world.unread.get(c.id) ?? 0
+    if (c.space_id !== spaceId) continue
+    /* Asked of the channel and the server together: a muted channel must not
+       be counted, or a server carries a number no channel inside it will
+       admit to - and a muted server must not be counted either, which is what
+       asking a set of muted channel ids could never answer. */
+    if (quietIn(c.id, spaceId, world.prefs, world.spacePrefs, now)) continue
+    n += world.unread.get(c.id) ?? 0
   }
   return n
 }
@@ -3431,7 +3436,8 @@ function Channels({
               {/* What is waiting. Absent at zero rather than a nought, and
                   absent on a muted channel — the point of muting it is not to
                   be told, and a number is being told. */}
-              {!world.muted.has(c.id) && !!world.unread.get(c.id) && (
+              {!quietIn(c.id, space.id, world.prefs, world.spacePrefs, Date.now())
+                && !!world.unread.get(c.id) && (
                 /* Through badgeLabel, like the badge on the taskbar. The
                    server stops counting at a hundred, so the raw number is a
                    ceiling wearing the clothes of an exact count - and the
@@ -3464,7 +3470,10 @@ function Channels({
                   : <Icon name="people" size={15} />}
                 <span className="nm">{c.name}</span>
                 {world.muted.has(c.id) && <Icon name="belloff" size={13} />}
-                {!world.muted.has(c.id) && !!world.unread.get(c.id) && (
+                {/* No server: a conversation belongs to the people in it, so
+                    there is nothing above it to defer to. */}
+                {!quietIn(c.id, null, world.prefs, world.spacePrefs, Date.now())
+                  && !!world.unread.get(c.id) && (
                   <span className="pill">{badgeLabel(world.unread.get(c.id) ?? 0)}</span>
                 )}
               </button>
