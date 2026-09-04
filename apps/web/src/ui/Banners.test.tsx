@@ -40,14 +40,17 @@ function withShell(state: {
   stage: string; version: string; percent: number; error: string
 }) {
   const installUpdate = vi.fn(async () => true)
+  const downloadUpdate = vi.fn(async () => true)
+  const checkForUpdate = vi.fn(async () => ({ supported: true, version: '9.9.9' }))
   ;(globalThis as { atrium?: unknown }).atrium = {
     setBadge: () => {},
     updateState: async () => state,
     onUpdate: () => {},
-    downloadUpdate: async () => true,
+    checkForUpdate,
+    downloadUpdate,
     installUpdate,
   }
-  return { installUpdate }
+  return { installUpdate, downloadUpdate, checkForUpdate }
 }
 
 describe('the update bar', () => {
@@ -168,5 +171,39 @@ describe('the offer of the app', () => {
     /* Three lines of advertisement is a hundred pixels the conversation
        moves down by, which is what it was reported as. */
     expect(WHY.length, 'the sentence lives on the button now').toBeGreaterThan(0)
+  })
+})
+
+/**
+ * Getting out of a failed update.
+ *
+ * Try again asked for a download, and there is nothing to download until a
+ * check has succeeded - so after a failed check the shell refused it outright
+ * with "please check update first", and the one button offered for recovering
+ * could not recover from the likeliest failure there is.
+ *
+ * Which is not hypothetical: the app looked for a release during the minute
+ * it was being uploaded, got a 404, and every press after that said that
+ * instead. Reported with a screenshot of exactly that.
+ */
+describe('trying again after an update went wrong', () => {
+  it('looks for the update again rather than asking to download one', async () => {
+    const shell = withShell({
+      stage: 'error', version: '', percent: 0,
+      error: 'Cannot find latest.yml in the latest release artifacts',
+    })
+    const el = draw(<UpdateBanner />)
+    await act(async () => {})
+
+    const again = [...el.querySelectorAll('button')]
+      .find((b) => /try again/i.test(b.textContent || ''))
+    expect(again, 'there is no Try again to press').toBeTruthy()
+
+    await act(async () => { again!.click() })
+
+    expect(shell.checkForUpdate, 'it never looked again').toHaveBeenCalled()
+    expect(shell.downloadUpdate,
+      'it asked to download, which is what the shell refuses after a failed check')
+      .not.toHaveBeenCalled()
   })
 })

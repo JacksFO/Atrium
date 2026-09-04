@@ -123,6 +123,19 @@ export type Shell = {
     error: string
   }>
   onUpdate: (cb: (event: string, payload: unknown) => void) => void
+  /**
+   * Look for one now.
+   *
+   * The shell has answered this all along and nothing here declared it, so
+   * the only way out of a failed update offered by the banner was to ask for
+   * a download - which is refused outright when it was the check that failed.
+   */
+  checkForUpdate: () => Promise<{
+    supported: boolean
+    version?: string | null
+    reason?: string
+    error?: string
+  }>
   downloadUpdate: () => Promise<boolean>
   installUpdate: () => Promise<boolean>
   share: {

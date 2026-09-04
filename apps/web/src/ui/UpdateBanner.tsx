@@ -122,7 +122,22 @@ export function UpdateBanner() {
         {canDownload(state) && (
           <button className="btn p" onClick={() => {
             apply('download')
-            void shell()?.downloadUpdate()
+            /*
+             * Checked again, not downloaded again.
+             *
+             * There is nothing to download until a check has succeeded, and
+             * the case this button exists for is the one where something went
+             * wrong - which includes the check itself going wrong. Asking to
+             * download after a failed check is refused outright with "please
+             * check update first", so the one button offered for getting out
+             * of a bad state could not get out of the most likely one: the
+             * app looked for a release during the minute it was being
+             * uploaded, got a 404, and then Try again said that instead.
+             *
+             * Downloading follows on its own - autoDownload is on - so this
+             * is the whole of it rather than a check and then a download.
+             */
+            void shell()?.checkForUpdate()
           }}>
             Try again
           </button>
