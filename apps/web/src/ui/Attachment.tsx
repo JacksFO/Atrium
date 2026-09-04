@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { usePausedWhenAway } from '../lib/usepaused'
 import { Icon } from './Icon'
 import type { Attachment as Att } from '../lib/wire'
 
@@ -42,6 +43,10 @@ export function Attachment({ a, onOpen }: {
    * off as missing.
    */
   const [gone, setGone] = useState(false)
+  /* Hooks cannot be called inside the branch that needs this, and the branch
+     is chosen per attachment - so it is taken here for every one of them and
+     used by the one that draws a video. It costs a ref and one listener. */
+  const gif = usePausedWhenAway<HTMLVideoElement>()
 
   if (gone) {
     return (
@@ -68,7 +73,7 @@ export function Attachment({ a, onOpen }: {
   if (a.is_gif) {
     return mime.startsWith('video/')
       ? (
-        <video className="attgif" src={a.path}
+        <video className="attgif" src={a.path} ref={gif}
           autoPlay loop muted playsInline preload="metadata" />
       )
       : (
