@@ -757,17 +757,22 @@ void FollowSession() {
      * playback had not changed, so nothing woke anybody and the bar carried
      * on from where the song used to be. Reported exactly that way.
      *
-     * Decided here, and this is the whole point of it. This event fires about
-     * once a second for as long as anything plays, and every one of those
-     * used to wake JavaScript, which asked what was playing - and asking
-     * builds a whole new session manager and walks every player on the
-     * machine. So a quarter of a million times a day, while a track simply
-     * played, this app made the Now Playing service enumerate everything, to
-     * learn that a second had passed.
+     * Decided here, and this is the whole point of it. This event fires for
+     * as long as anything plays - measured against Spotify, every 4.5 seconds
+     * - and every one of those used to wake JavaScript, which asked what was
+     * playing, and asking builds a whole new session manager and walks every
+     * player on the machine. So about twenty thousand times a day, while a
+     * track simply played, this app made the Now Playing service enumerate
+     * everything to learn that a few seconds had passed.
      *
-     * A second passing is exactly what the position doing what it should
-     * looks like, and it is the one thing nobody needs telling about: the
-     * card carries the bar forward on its own. A seek does not look like
+     * Measured over a minute of real playback, before and after:
+     *
+     *   waking on every timeline event   14 wakes
+     *   waking only on a jump             1 wake  (the first, on connecting)
+     *
+     * Time passing is exactly what the position doing what it should looks
+     * like, and it is the one thing nobody needs telling about: the card
+     * carries the bar forward on its own. A seek does not look like
      * that - it jumps - and a jump is worth waking for.
      *
      * The comparison is here rather than up in JavaScript because up there it
