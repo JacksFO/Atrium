@@ -38,6 +38,8 @@
 
 #include <string>
 #include <algorithm>
+#include <chrono>
+#include <atomic>
 #include <cctype>
 #include <vector>
 
@@ -207,10 +209,37 @@ GlobalSystemMediaTransportControlsSession PickSession(
    and it has no call to carry it on. */
 std::string g_wantApp;
 
+/*
+ * The session manager the watcher is holding, if it is running.
+ *
+ * Declared here and defined beside the watcher, because the reading happens
+ * further up this file than the watching does and the alternative is moving
+ * one of them for the sake of the compiler.
+ */
+bool HeldManager(GlobalSystemMediaTransportControlsSessionManager& out);
+
 Playing ReadPlaying(bool wantArt, std::string* art) {
   Playing out;
   try {
-    auto manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync().get();
+    /*
+     * The one the watcher is already holding, where there is one.
+     *
+     * Asking for a session manager is not a cheap call that happens to be
+     * repeated - it is a request to another process, which then enumerates
+     * and hands back every player on the machine. Doing that per read meant
+     * the Now Playing service did all of that work every time this app
+     * wondered what was on, and that service was measured burning a whole
+     * core for it.
+     *
+     * The watcher holds one for as long as it runs, and it is the same object
+     * the same events come from, so there is nothing to be gained by asking
+     * for another. Asked for only when nothing is watching - a one-off read
+     * before the watcher has started, which is where this began.
+     */
+    GlobalSystemMediaTransportControlsSessionManager manager{nullptr};
+    if (!HeldManager(manager)) {
+      manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync().get();
+    }
     auto session = PickSession(manager, g_wantApp);
     if (!session) return out;
 
@@ -626,6 +655,12 @@ struct Watcher {
 
 Watcher watcher;
 
+bool HeldManager(GlobalSystemMediaTransportControlsSessionManager& out) {
+  if (!watcher.running || !watcher.manager) return false;
+  out = watcher.manager;
+  return true;
+}
+
 void TellThem() {
   if (!watcher.running) return;
   watcher.tell.NonBlockingCall([](Napi::Env env, Napi::Function cb) {
@@ -635,6 +670,60 @@ void TellThem() {
        changed". */
     cb.Call({});
   });
+}
+
+/*
+ * Whether the position moved by itself, or somebody moved it.
+ *
+ * Steady play advances the position by however long has passed since the last
+ * look, so the two track each other and the difference stays near nothing. A
+ * seek breaks that: the position lands somewhere the clock cannot explain.
+ *
+ * The allowance is generous on purpose - players round, report late, and stall
+ * for a moment on a slow network - and being wrong here is only ever a bar
+ * that catches up a second later, against a cost of waking everything.
+ *
+ * A new track resets it rather than counting as a seek, because the track
+ * changing has its own event and this one must not say it twice.
+ */
+/* Atomic because these are touched from whichever pool thread the media
+   event arrives on, and two players changing at once is ordinary. Nothing
+   here needs the pair to be consistent with each other - being wrong once
+   costs a single extra wake - but a torn read of a 64-bit value is not
+   something to leave to the platform. */
+std::atomic<int64_t> g_lastPos{-1};
+std::atomic<int64_t> g_lastAt{0};
+const int64_t SEEK_SLACK_MS = 2500;
+
+int64_t NowMs() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+void ForgetPosition() {
+  g_lastPos = -1;
+  g_lastAt = 0;
+}
+
+bool Seeked(GlobalSystemMediaTransportControlsSession const& session) {
+  try {
+    const int64_t pos = session.GetTimelineProperties().Position().count() / 10000;
+    const int64_t now = NowMs();
+    const int64_t was = g_lastPos;
+    const int64_t when = g_lastAt;
+    g_lastPos = pos;
+    g_lastAt = now;
+    /* Nothing to compare against yet: the first tick after a track or a
+       player changes is not a seek. */
+    if (was < 0 || when == 0) return false;
+    const int64_t expected = was + (now - when);
+    const int64_t off = pos > expected ? pos - expected : expected - pos;
+    return off > SEEK_SLACK_MS;
+  } catch (...) {
+    /* A player that vanished mid-question. Say nothing rather than wake
+       everybody over an exception. */
+    return false;
+  }
 }
 
 /** Follow whichever session is current, and let go of the last one. */
@@ -647,10 +736,18 @@ void FollowSession() {
       watcher.session = nullptr;
     }
     watcher.session = PickSession(watcher.manager, g_wantApp);
+    /* A different player's position has nothing to do with the last one's. */
+    ForgetPosition();
     if (!watcher.session) return;
 
     watcher.onMediaChanged = watcher.session.MediaPropertiesChanged(
-        [](auto&&, auto&&) { TellThem(); });
+        [](auto&&, auto&&) {
+          /* The track changed, so the position starts again somewhere new -
+             which is not somebody seeking, and must not be counted as one on
+             the next tick. */
+          ForgetPosition();
+          TellThem();
+        });
     watcher.onPlaybackChanged = watcher.session.PlaybackInfoChanged(
         [](auto&&, auto&&) { TellThem(); });
     /*
@@ -660,12 +757,27 @@ void FollowSession() {
      * playback had not changed, so nothing woke anybody and the bar carried
      * on from where the song used to be. Reported exactly that way.
      *
-     * This one fires often while a track simply plays, which is why what to
-     * do about it is decided further up rather than here - a seek is worth
-     * telling ten people about and a second passing is not.
+     * Decided here, and this is the whole point of it. This event fires about
+     * once a second for as long as anything plays, and every one of those
+     * used to wake JavaScript, which asked what was playing - and asking
+     * builds a whole new session manager and walks every player on the
+     * machine. So a quarter of a million times a day, while a track simply
+     * played, this app made the Now Playing service enumerate everything, to
+     * learn that a second had passed.
+     *
+     * A second passing is exactly what the position doing what it should
+     * looks like, and it is the one thing nobody needs telling about: the
+     * card carries the bar forward on its own. A seek does not look like
+     * that - it jumps - and a jump is worth waking for.
+     *
+     * The comparison is here rather than up in JavaScript because up there it
+     * is already too late: the expensive part is the asking, and by then it
+     * has been done. Nothing here asks anything. The session is already held
+     * and its timeline is a property of it, so this costs a read of two
+     * numbers and no call to anybody.
      */
     watcher.onTimelineChanged = watcher.session.TimelinePropertiesChanged(
-        [](auto&&, auto&&) { TellThem(); });
+        [](auto&& sender, auto&&) { if (Seeked(sender)) TellThem(); });
   } catch (...) {
     // A player that vanished between one line and the next.
   }
